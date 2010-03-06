@@ -1,0 +1,127 @@
+!SLIDE cover
+
+h1. Ruby Code Performance Tweaks
+
+* Kurt Stephens
+* Enova Financial
+
+!SLIDE
+
+h1. Why bother?
+
+* Layers.
+* Ruby platforms and language versions perform differently.
+* Performance of common Ruby idioms are:
+** Conveinent
+** Concise
+** Counter-intuitive
+
+!SLIDE
+
+h1. Layers 
+
+* Decomposition
+* Reuse, Reliability
+* Layer Pyramids become Depedency Funnels
+
+!SLIDE
+
+h1. Pyramid
+
+<object data="image/code_pyramid.svg" />
+
+!SLIDE
+
+h1. Funnel
+
+<object data="image/code_funnel.svg" />
+
+!SLIDE
+
+h1. Ruby Platforms
+
+<% Platform.instances.each do | plat | %>
+* <%= plat.name %>
+<%= plat.details %>
+<% end %>
+
+!SLIDE
+
+h1. Problems
+
+* Small problems become big problems.
+* Common idioms are born from common problems.
+
+!SLIDE
+
+h1. Idioms
+
+h2. Idioms make friends with: 
+* programmers - efficency, style
+* platforms - implementation techniques
+* algorithms - O(1), O(N), O(log N), O(N ^ 2)
+* space - structure, garbage collection
+* time - is money
+
+<% Problem.instances.each do | prob | %>
+
+!SLIDE
+
+h1. Problem: <%= prob.name %>
+
+<%= prob.description %>
+
+<% unless prob.setup.empty? %>
+@@@ ruby
+<%= prob.example || prob.scenario || prob.setup %>
+@@@
+<% end %>
+
+<% prob.solutions.each do | sol | %>
+
+!SLIDE
+
+h1. Problem: <%= prob.name %>
+
+h1. Solution <%= sol.index %>: <%= sol.name %>
+
+@@@ ruby
+<%= sol.example ? sol.example : (sol.before.empty? ? sol.code : sol.before) %>
+@@@
+
+<% end %>
+
+!SLIDE
+
+h1. Results
+
+n = <%= prob.n * ', ' %>
+
+<% prob.platforms.each do | plat | %>
+!SLIDE
+
+!image/<%= prob.name %>-<%= plat.name %>.png!
+
+<% end %>
+
+<% prob.solutions.each do | sol | %>
+!SLIDE
+
+!image/<%= prob.name %>-sol<%= sol.index %>.png!
+
+<% end %>
+
+<% if prob.synopsis %>
+!SLIDE
+
+h1. Problem: <%= prob.name %>
+
+<%= prob.synopsis %>
+<% end %>
+
+<% end %>
+
+!SLIDE
+
+h1. But wait there's more.
+

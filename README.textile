@@ -1,0 +1,11 @@
+h1. Ruby Code Tweaks
+
+p. Code to compare common Ruby code idoms and generate slides to discuss the topic.
+
+h1. Dependencies
+
+* Scarlet - http://github.com/jcxplorer/scarlet
+* python-pygments
+
+h1. Setup
+

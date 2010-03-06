@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="700"
+   height="700"
+   id="svg2"
+   version="1.1"
+   inkscape:version="0.47pre4 r22446"
+   sodipodi:docname="code_funnel.svg">
+  <defs
+     id="defs4">
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       id="perspective10" />
+    <inkscape:perspective
+       id="perspective2901"
+       inkscape:persp3d-origin="0.5 : 0.33333333 : 1"
+       inkscape:vp_z="1 : 0.5 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 0.5 : 1"
+       sodipodi:type="inkscape:persp3d" />
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.70710678"
+     inkscape:cx="203.88016"
+     inkscape:cy="508.57143"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="1920"
+     inkscape:window-height="1129"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(0,-352.36218)">
+    <g
+       id="g3014"
+       transform="translate(-29.698485,52.325902)">
+      <path
+         sodipodi:nodetypes="ccccc"
+         id="rect2820"
+         d="m 46.669052,316.97114 667.508738,0 -291.32799,668.92297 -94.75224,0 c 0,0 -285.671148,-660.43769 -281.428508,-668.92297 z"
+         style="fill:#cccccc" />
+      <text
+         id="text2823"
+         y="804.87482"
+         x="302.64175"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="804.87482"
+           x="302.64175"
+           id="tspan2825"
+           sodipodi:role="line">def foo(x)</tspan><tspan
+           id="tspan2889"
+           y="854.87482"
+           x="302.64175"
+           sodipodi:role="line">  x + 5</tspan><tspan
+           id="tspan2891"
+           y="904.87482"
+           x="302.64175"
+           sodipodi:role="line">end</tspan></text>
+      <text
+         id="text2827"
+         y="495.16205"
+         x="227.6884"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="495.16205"
+           x="227.6884"
+           id="tspan2829"
+           sodipodi:role="line">def bar(y)</tspan><tspan
+           id="tspan2918"
+           y="545.16205"
+           x="227.6884"
+           sodipodi:role="line">  1000.times {</tspan><tspan
+           id="tspan2920"
+           y="595.16205"
+           x="227.6884"
+           sodipodi:role="line">    foo(y)</tspan><tspan
+           id="tspan2922"
+           y="645.16205"
+           x="227.6884"
+           sodipodi:role="line">  }</tspan><tspan
+           id="tspan2924"
+           y="695.16205"
+           x="227.6884"
+           sodipodi:role="line">end</tspan></text>
+      <text
+         id="text2831"
+         y="382.02496"
+         x="117.37976"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="382.02496"
+           x="117.37976"
+           id="tspan2833"
+           sodipodi:role="line">???</tspan></text>
+      <text
+         id="text2835"
+         y="382.02496"
+         x="335.16861"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="382.02496"
+           x="335.16861"
+           id="tspan2837"
+           sodipodi:role="line">???</tspan></text>
+      <text
+         id="text2843"
+         y="427.27979"
+         x="668.92303"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="427.27979"
+           x="668.92303"
+           id="tspan2845"
+           sodipodi:role="line" /></text>
+      <text
+         id="text2835-8"
+         y="382.72656"
+         x="542.26642"
+         style="font-size:40px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;fill:#000000;fill-opacity:1;stroke:none;font-family:Sans;-inkscape-font-specification:Sans"
+         xml:space="preserve"><tspan
+           y="382.72656"
+           x="542.26642"
+           id="tspan2837-3"
+           sodipodi:role="line">???</tspan></text>
+    </g>
+  </g>
+</svg>
