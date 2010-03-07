@@ -2,7 +2,7 @@
 
 h1. Ruby Code Performance Tweaks
 
-* Kurt Stephens
+* Kurt Stephens - kurt@enovafinancial.com
 * Enova Financial
 
 !SLIDE
@@ -56,7 +56,7 @@ h1. Problems
 
 h1. Idioms
 
-h2. Idioms make friends with: 
+h2. make friends with: 
 * programmers - efficency, style
 * platforms - implementation techniques
 * algorithms - O(1), O(N), O(log N), O(N ^ 2)
@@ -71,11 +71,17 @@ h1. Problem: <%= prob.name %>
 
 <%= prob.description %>
 
-<% unless prob.setup.empty? %>
 @@@ ruby
-<%= prob.example || prob.scenario || prob.setup %>
+<%= prob.setup unless prob.example %>
+<%= case
+when x = prob.example
+  x
+else
+  prob.around.gsub(/\b__SOLUTION__\b/, '# SOLUTION?')
+end
+%>
 @@@
-<% end %>
+<%= prob.notes %>
 
 <% prob.solutions.each do | sol | %>
 
@@ -86,8 +92,11 @@ h1. Problem: <%= prob.name %>
 h1. Solution <%= sol.index %>: <%= sol.name %>
 
 @@@ ruby
-<%= sol.example ? sol.example : (sol.before.empty? ? sol.code : sol.before) %>
+<%= prob.setup %>
+<%= sol.example || sol.code_block %>
 @@@
+
+<%= sol.notes %>
 
 <% end %>
 
@@ -124,4 +133,12 @@ h1. Problem: <%= prob.name %>
 !SLIDE
 
 h1. But wait there's more.
+
+!SLIDE
+
+h1. More Info
+
+http://github.com/kstephens/ruby_code_tweaks
+
+
 

@@ -5,6 +5,7 @@ p. Code to compare common Ruby code idoms and generate slides to discuss the top
 h1. Dependencies
 
 * Scarlet - http://github.com/jcxplorer/scarlet
+* Gruff - gem install gruff
 * python-pygments
 
 h1. Setup

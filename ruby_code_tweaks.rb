@@ -15,9 +15,10 @@ class Problem
     @@instances
   end
 
-  attr_accessor :name, :description, :example, :n, :scenario, :setup, :around, :enabled
+  attr_accessor :name, :description, :example, :n, :setup, :around, :enabled
+  attr_accessor :inline
   attr_accessor :solutions, :measurements
-  attr_accessor :synopsis
+  attr_accessor :synopsis, :notes
 
   def initialize name
     @name = name
@@ -107,7 +108,9 @@ class Problem
 
     prob = self
 
-    max_value = measurements.map{|h| h[:time]}.max
+    prob.collect_measurements!
+
+    max_value = measurements.map{|h| h[:time] || 0}.max
 
     platforms.each do | plat |
       g = Gruff::Bar.new
@@ -116,7 +119,7 @@ class Problem
       
       labels = { }
       self.n.each_with_index do | n, i |
-        labels[i] = "n=#{n}"
+        labels[i] = (i == 0 ? "n = #{n}" : "#{n}")
       end
       solutions.each do | sol |
         data = [ ]
@@ -141,7 +144,7 @@ class Problem
       
       labels = { }
       self.n.each_with_index do | n, i |
-        labels[i] = "n=#{n}"
+        labels[i] = (i == 0 ? "n = #{n}" : "#{n}")
       end
       platforms.each do | plat |
         data = [ ]
@@ -165,12 +168,42 @@ end
 
 
 class Solution
-  attr_accessor :name, :code, :problem, :index, :before, :example
+  attr_accessor :name, :code, :problem, :index, :before, :example, :notes
 
   def initialize name, code
     @name, @code = name, code
     @before = ''
   end
+
+  def code_block
+    result = ''
+    
+    sol = self
+    prob = problem
+
+    prob.around =~ /\b__SOLUTION__\b([^\n]*)/
+    args = $1 || ''
+    
+    sol_meth = "sol_#{sol.index}"
+    sol_code = sol.code
+    
+    unless prob.inline
+      result << <<"END"
+def #{sol_meth} #{args}
+  #{sol_code}
+end
+END
+      result << "\n"
+      sol_code = "#{sol_meth}"
+    end
+
+    sol_code = sol_code.sub(/\n$/, '')
+    result << prob.around.gsub(/\b__SOLUTION__\b/, sol_code) 
+    result << "\n"
+
+    result
+  end
+
 end
 
 
@@ -198,20 +231,31 @@ class Platform
 
   def exec_Problem! prob
     return unless self.enabled
+
+    plat = self
+
     $stdout.puts "\n  #{name}: #{details}"
     file = "problem/#{prob.name}.rb"
     result_file = "measurement/#{prob.name}-#{self.name}.rb"
     File.open(file, "w+") do | fh |
       fh.puts "require 'benchmark'"
+      fh.puts "$solution = nil"
+      fh.puts "n = nil"
       fh.puts "$rfh = File.open(#{result_file.inspect}, 'w+')"
       fh.puts '$rfh.puts "["'
       fh.puts 'Kernel.at_exit { $rfh.puts "]"; $rfh.close }'
+      fh.puts "begin"
       fh.puts "Kernel.srand(#{$srand})"
-      fh.puts '$stderr.write "warmup: "'
-      render_prob fh, prob
+      if ENV['WARMUP'] != '0'
+        fh.puts '$stderr.write "warmup: "'
+        render_prob fh, prob
+      end
       fh.puts '$stderr.puts " GO!"'
       render_prob fh, prob, :benchmark
       fh.puts '$stderr.puts "FINISHED!"'
+      fh.puts 'rescue Exception => err'
+      fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, :problem => #{prob.name.inspect}, :solution => $solution, :n => n, :error => err.to_s, :backtrace => err.backtrace }.inspect + ', ')" 
+      fh.puts 'end'
       fh.puts 'exit 0'
       fh.flush
     end
@@ -228,20 +272,25 @@ class Platform
     prob.n.each do | n |
       fh.puts "n = #{n}"
       fh.puts '  $stderr.write n' unless bm
-      fh.puts prob.setup.sub('__SCENARIO__', prob.scenario || '')
+      fh.puts prob.setup
       prob.solutions.each do | sol |
-        code = prob.around.sub('__SOLUTION__', sol.code)
+        fh.puts "  $solution = #{sol.name.inspect}"
+
         fh.puts sol.before
+
         fh.puts "  ObjectSpace.garbage_collect"
         if bm
           fh.puts "  bmr = bm.report('n = #{'%7d' % n} : ' + #{sol.name.to_s.inspect}) do"
         else
           fh.puts '  $stderr.write "."'
         end
-        fh.puts code
+
+        fh.puts sol.code_block
+
         if bm
           fh.puts '  end' 
-          fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, :problem => #{prob.name.inspect}, :solution => #{sol.name.inspect}, :n => n, :time => bmr.real }.inspect + ', ')"
+          fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, :problem => #{prob.name.inspect}, :solution => $solution, :n => n, :time => bmr.real }.inspect + ', ')"
+          fh.puts "  $rfh.flush"
         end
       end
     end
@@ -250,7 +299,9 @@ class Platform
 end
 
 
-Platform.new("MRI-1.8.6-p287",   "~/local/ruby/1.8.6-p287/bin/ruby")
+########################################################
+
+#Platform.new("MRI-1.8.6-p287",   "~/local/ruby/1.8.6-p287/bin/ruby")
 Platform.new("MRI-1.8.6-p399",   "~/local/ruby/1.8.6-p399/bin/ruby")
 Platform.new("MRI-1.8.7", "/usr/bin/ruby")
 Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
@@ -258,18 +309,10 @@ Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
 Platform.new("Rubinius", "~/local/rubinius/trunk/bin/rbx")
 
 ########################################################
-
-if false
-p = Problem.new(:null)
-  
-p.solution "nothing", <<END
-  n
-END
-end
-
+# Begin problems.
 ########################################################
 
-p = Problem.new(:do_n_times)
+p = Problem.new(:yield_n_times)
 p.description = "Yield to a block N times."
 p.n = [ 1000 ]
 p.around= <<END
@@ -277,22 +320,26 @@ p.around= <<END
     __SOLUTION__
   end
 END
+p.inline = true
 
 p.solution "for i in 1..n", <<END
   for i in 1..n do
     n
   end
 END
+
 p.solution "n.times", <<END
   n.times do
     n
   end
 END
+
 p.solution "1.upto(n)", <<END
   1.upto(n) do
     n
   end
 END
+
 p.solution "(1..n).each", <<END
   (1..n).each do
     n
@@ -300,47 +347,40 @@ p.solution "(1..n).each", <<END
 END
 
 p.synopsis = <<END
-* Use n.times, for portability do not bother with the rest.
+* Use n.times, for portability.
+* Do not bother with the rest.
+* Ranges create garbage.
+* Something is up with MRI 1.8.7.
 END
 
 ############################################################
 
 p = Problem.new(:tail_position_return)
 p.description = 'Return a value from a method.'
-p.enabled = true
 p.n = [ 10_000_000 ]
 p.around = <<END
   n.times do
-    __SOLUTION__
+    x = true
+    __SOLUTION__ x
+    x = false
+    __SOLUTION__ x
   end
 END
 
 s = p.solution "explicit return", <<'END'
-  explicit_return true
-  explicit_return false
-END
-s.before = <<'END'
-def explicit_return x
   if x
     return 1
   else
     return 2
   end
-end
 END
 
 s = p.solution "fall through", <<'END'
-  fall_through true
-  fall_through false
-END
-s.before = <<'END'
-def fall_through x
   if x
     1
   else
     2
   end
-end   
 END
 
 p.synopsis = <<'END'
@@ -351,87 +391,142 @@ END
 
 ############################################################
 
-p = Problem.new(:string_concatenation)
-p.description = <<'END'
-Accumulate String parts into one larger String.
+p = Problem.new(:inject)
+p.description = 'Enumerate elements while using a temporary or block variable.'
+p.n = [ 1, 10, 20, 50, 100, 200 ]
+p.setup = <<END
+  array = (0 ... n).to_a.sort_by{|x| rand}
 END
-# p.enabled = false
-p.n = [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100, 200, 500, 1000 ]
-p.scenario = '(0 ... 100).to_a.map{"a" * n}'
-p.setup= <<'END'
-  @try ||= { }
-  @try[n] ||= __SCENARIO__
-END
-p.around= <<END
-  @str = ''
-  100.times do
-    @try[n].each do | x |
+p.around = <<END
+  500.times do
+    array.each do | x |
       __SOLUTION__
     end
   end
 END
+p.inline = true
 
-p.solution "str += x", <<END
-  @str += x
+s = p.solution "Array#inject", <<END
+  array.inject({ }) { | hash, x | hash[x] = true; hash }
 END
-p.solution "str << x", <<END
-  @str << x
+
+s = p.solution "Local variable", <<END
+  hash = { }
+  array.each { | x | hash[x] = true }
+  hash
 END
 
 p.synopsis = <<'END'
+* Use a local variable, #inject is slower.
+* Rubinius appears to have a problem.
+END
+
+############################################################
+
+p = Problem.new(:string_concatenation)
+p.description = <<'END'
+Accumulate String parts of size N into one larger String.
+END
+# p.enabled = false
+p.n = [ 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 ]
+p.setup= <<'END'
+  parts = (0 ... 100).to_a.map{"a" * n}
+END
+p.around= <<END
+  str = ''
+  100.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "str += x", <<END
+parts.each do | x |
+      str += x
+    end
+END
+s.notes = <<'END'
+@@@ ruby
+  str += x
+@@@
+is the same as:
+@@@ ruby
+  str = (str + x)
+@@@
+END
+
+s = p.solution "str << x", <<'END'
+parts.each do | x |
+      str << x
+    end
+END
+s.notes = <<'END'
+END
+
+s = p.solution "parts.join", <<END
+str << parts.join("")
+END
+s.notes = <<'END'
+END
+
+
+p.synopsis = <<'END'
 * Use str << x
-* str += x creates pointless garbage
-* Use array.concat x, instead of array += x
+* str += x creates pointless garbage.
+* Some platforms handle garbage and assignments poorly.
+* Use array.concat x, instead of array += x.
 END
 
 
 ############################################################
 
-p = Problem.new(:array_inclusion_short)
-p.description = 'Is a value in a short, constant list?'
-p.example = <<'END'
-x == :foo || x == :bar
-
-[ :foo, :bar ].include?(x)
-
-case x
-when :foo, :bar
-  true
-end
-END
-
+p = Problem.new(:array_include_short)
+p.description = 'Is a value in a short, constant set?'
 p.n= [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+p.example = <<'END'
+  x == 0 || x == 1
+
+  [ 0, 1 ].include?(x)
+
+  case x
+  when 0, 1
+    true
+  end
+END
+p.inline = true
 p.setup= <<END
   @array = (0 ... n).to_a.sort_by{|x| rand}
-  @try   = (0 ... 1000).to_a.map{|x| rand(n + n)}.sort_by{|x| rand}
+  try    = (0 ... 1000).to_a.map{|x| rand(n + n)}.sort_by{|x| rand}
 END
 p.around= <<'END'
   1000.times do
-    @try.each do | x |
-      __SOLUTION__
+    try.each do | x |
+      __SOLUTION__ x
     end
   end
 END
 
-s = p.solution "array.include?(x)", <<END
-  array_include?(x)
-END
-s.example = <<'END'
-  ARRAY = [ 0, 1 ].freeze   # n == 2
-  ..
-  ARRAY.include?(x)
+s = p.solution "x == y1 || ...", <<'END'
+  inline_any_equal?
 END
 s.before = <<'END'
-def array_include? x
-  @array.include? x
-end
+eval <<"RUBY"
+  def inline_any_equal? x
+    #{@array.map{|y| "x == #{y.inspect}"} * " || "}
+  end
+RUBY
+END
+s.example = <<'END'
+  x == 0                 # n == 1
+  x == 0 || x == 1       # n == 2
+  ...
 END
 
 s = p.solution "[ ... ].include?(x)", <<END
-  inline_array_include?(x)
+  inline_array_include?
 END
 s.example = <<'END'
-  [ 0, 1 ].include?(x)   # n == 2
+  [ 0, 1 ].include?(x)     # n == 2
 END
 s.before = <<'END'
 eval <<"RUBY"
@@ -441,23 +536,22 @@ eval <<"RUBY"
 RUBY
 END
 
-s = p.solution "x == y1 || ...", <<END
-  expr?(x)
-END
-s.before = <<'END'
-eval <<"RUBY"
-  def expr? x
-    #{@array.map{|y| "x == #{y.inspect}"} * " || "}
-  end
-RUBY
+s = p.solution "array.include?(x)", <<END
+  array_include?
 END
 s.example = <<'END'
-  x == 0              # n == 1
-  x == 0 || x == 1    # n == 2
+  ARRAY = [ 0, 1 ].freeze   # n == 2
+  ...
+  ARRAY.include?(x)
+END
+s.before = <<'END'
+  def array_include? x
+    @array.include? x
+  end
 END
 
 s = p.solution "case x; when y1, y2 ...", <<END
-  case_when?(x)
+  case_when?
 END
 s.example = <<'END'
   case x
@@ -477,7 +571,7 @@ RUBY
 END
 
 s = p.solution "case x; when *array", <<END
-  case_when_splat?(x)
+  case_when_splat?
 END
 s.example = <<'END'
   ARRAY = [ 0, 1 ].freeze
@@ -497,7 +591,7 @@ s.before = <<'END'
 END
 
 s = p.solution "hash.key?(x)", <<END
-  hash_key?(x)
+  hash_key?
 END
 s.example = <<'END'
   HASH = { 0 => true, 1 => true }.freeze
@@ -513,7 +607,7 @@ end
 END
 
 s = p.solution "hash[x]", <<END
-  hash_get x
+  hash_get
 END
 s.example = <<'END'
   HASH = { 0 => true, 1 => true }.freeze
@@ -529,7 +623,7 @@ end
 END
 
 s = p.solution "set.include?(x)", <<END
-  set_include?(x)
+  set_include?
 END
 s.example = <<'END'
 require 'set'
@@ -546,148 +640,71 @@ end
 END
 
 p.synopsis = <<'END'
+* Beware: case uses #===, not #==.
 * Use x == y when n == 1.
 * Use hash.key?(x) when n > 1.
+* Ruby Set is slower than Hash.
 END
 
 ############################################################
 
-p = Problem.new(:array_inclusion)
-p.n= [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100, 200, 500, 1000 ]
+p = Problem.new(:array_include)
+p.n= [ 1, 10, 20, 50, 100, 200, 500, 1000 ]
 p.setup= <<END
-  @array = (0 ... n).to_a.sort_by{|x| rand}
-  @try   = (0 ... 2000).to_a.sort_by{|x| rand}
+  array = (0 ... n).to_a.sort_by{|x| rand}
+  try   = (0 ... 2000).to_a.sort_by{|x| rand}
 END
 p.around= <<END
   100.times do
-    @try.each do | x |
+    try.each do | x |
       __SOLUTION__
     end
   end
 END
+p.inline = true
 
-p.solution "Array#include?", <<END
-  @array.include?(x)
+s = p.solution "Array#include?", <<END
+  array.include?(x)
 END
-p.solution "case x; when *array", <<END
+
+s = p.solution "case x; when *array", <<END
   case x
-  when *@array
+  when *array
     true
   end
 END
-p.solution "! (array & [ x ]).empty?", <<END
-  ! (@array & [ x ]).empty?
+
+s = p.solution "! (array & [ x ]).empty?", <<END
+  ! (array & [ x ]).empty?
 END
 
-=begin
-* If a & b is implemented as:
-a.each do | ae |
-  b.each do | be |
-    result << be if ae == be
-  end
-end
-
-1) Swap a, b if a.size > b.size
-2) Stop when result.size == [ a.size, b.size ].min
-=end
-
+s = p.solution "hash.key?(x)", <<END
+  hash.key?(x)
+END
+s.before = <<'END'
+  hash = { }; array.each { | x | hash[x] = true }
+END
+ 
+p.synopsis = <<'END'
+* Set performs poorly on Rubinius.
+* Set performs "too well" on everything else.
+* Use a Hash.
+END
 
 ############################################################
 
-p = Problem.new(:set_intersection)
-p.description = 'Produce the interection of two unique arrays.'
-p.n = [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, ] #, 50 ]
-p.setup= <<'END'
-  @array = (0 ... n).to_a.sort_by { | x | rand }
-  @try   = (0 ... n * 2).to_a.map { | i | (0 ... i).to_a.sort_by { | x | rand } }
-END
-p.around= <<END
-  100.times do
-    __SOLUTION__
-  end
-END
-
-s = p.solution "simple", <<END
-  @try.each do | b |
-    simple @array, b
-    simple b, @array
-  end
-END
-s.before = <<'END'
-def simple a, b
-  result = [ ]
-  a.each do | ae |
-    b.each do | be |
-      if ae == be
-        result << be 
-      end
-    end
-  end
-  result
-end
-END
-
-s = p.solution "swap on size", <<END
-  @try.each do | b |
-    simple_with_swap @array, b
-    simple_with_swap b, @array
-  end
-END
-s.before = <<'END'
-def simple_with_swap a, b
-  b, a = a, b if a.size > b.size
-  result = [ ]
-  a.each do | ae |
-    b.each do | be |
-      if ae == be
-        result << be 
-      end
-    end
-  end
-  result
-end
-END
-
-s = p.solution "swap on size and limit", <<END
-  @try.each do | b |
-    simple_with_swap @array, b
-    simple_with_swap b, @array
-  end
-END
-s.before = <<'END'
-def simple_with_swap_and_limit a, b
-  b, a = a, b if a.size > b.size
-  max_result_size = [ a.size, b.size ].min
-  result = [ ]
-  a.each do | ae |
-    b.each do | be |
-      if ae == be 
-        result << be
-        return result if result.size >= max_result_size
-      end
-    end
-  end
-  result
-end
-END
-
-
 ############################################################
 
-if ENV['MEASURE'] == "1"
-  Dir['measurement/*.rb'].each{|fn| File.unlink fn } 
-end
-
-Problem.instances.each do | prob |
+Problem.instances.select do | prob |
+  (f = (ENV['PROBLEM'] || '').split(/,|\s+/)).empty? ? true : f.include?(prob.name.to_s)
+end.each do | prob |
   prob.measure! if ENV['MEASURE'] == "1"
-  prob.collect_measurements!
   prob.graph! if ENV['GRAPH'] == "1"
 end
 
 ############################################################
 
 if ENV['SLIDES'] == '1'
-
   slides_textile = 'slides.textile'
   erb = ERB.new(File.read(erb_file = "#{slides_textile}.erb"))
   erb.filename = erb_file
