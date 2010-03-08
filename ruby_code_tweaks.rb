@@ -188,22 +188,46 @@ class Solution
     sol_code = sol.code
     
     unless prob.inline
-      result << <<"END"
+      result << gsub_indented(<<"END", '__SOLUTION__', sol_code)
 def #{sol_meth} #{args}
-  #{sol_code}
+  __SOLUTION__
 end
 END
       result << "\n"
       sol_code = "#{sol_meth}"
     end
 
-    sol_code = sol_code.sub(/\n$/, '')
-    result << prob.around.gsub(/\b__SOLUTION__\b/, sol_code) 
+    result << gsub_indented(prob.around, '__SOLUTION__', sol_code) 
     result << "\n"
 
     result
   end
 
+  def gsub_indented template, keyword, replacement
+    replacement = replacement.dup
+
+    # Determine and remove indentation of first line from replacement.
+    replacement =~ /\A(\s*)\S/
+    dedent = $1 || ''
+    replacement.gsub!(/^#{dedent}/, '')
+
+    # Determine the indentation of the first line containing keyword in the template.
+    template =~ /^(\s*)\b#{keyword}\b/
+    indent = $1 || ''
+
+    # Indent replacement with the indentation of the keyword.
+    replacement.gsub!(/^/, indent)
+    # Remove the identation in the replacement, since keyword is already indentend in the template.
+    replacement.sub!(/\A#{indent}/, '')
+
+    # Remove last newline.
+    replacement.sub!(/\n\Z/, indent)
+    
+    # Replace keyword with replacement.
+    result = template.gsub(/\b#{keyword}\b/, replacement)
+
+    result
+  end
 end
 
 
@@ -398,10 +422,8 @@ p.setup = <<END
   array = (0 ... n).to_a.sort_by{|x| rand}
 END
 p.around = <<END
-  500.times do
-    array.each do | x |
-      __SOLUTION__
-    end
+  100000.times do
+    __SOLUTION__
   end
 END
 p.inline = true
@@ -441,9 +463,9 @@ END
 p.inline = true
 
 s = p.solution "str += x", <<END
-parts.each do | x |
-      str += x
-    end
+  parts.each do | x |
+    str += x
+  end
 END
 s.notes = <<'END'
 @@@ ruby
@@ -456,15 +478,15 @@ is the same as:
 END
 
 s = p.solution "str << x", <<'END'
-parts.each do | x |
-      str << x
-    end
+  parts.each do | x |
+    str << x
+  end
 END
 s.notes = <<'END'
 END
 
 s = p.solution "parts.join", <<END
-str << parts.join("")
+  str << parts.join("")
 END
 s.notes = <<'END'
 END
