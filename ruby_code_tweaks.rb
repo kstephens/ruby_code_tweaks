@@ -86,6 +86,11 @@ class Problem
     end
   end
 
+  def get_errors filter = { }
+    get_measurements(filter).
+      select{|h| h[:error]}
+  end
+
   def best_solution
     sc = { } # solution score
     platforms.each do | plat |
@@ -113,6 +118,7 @@ class Problem
     max_value = measurements.map{|h| h[:time] || 0}.max
 
     platforms.each do | plat |
+      errors = false
       g = Gruff::Bar.new
       g.title = "#{prob.name} on #{plat.name}" 
       g.sort = false
@@ -125,9 +131,14 @@ class Problem
         data = [ ]
         self.n.each do | n |
           h = get_measurements(:n => n, :solution => sol, :platform => plat).first
+          errors = true unless h
           data << (h ? h[:time] : 0)
         end
-        g.data(sol.name, data)
+        data_name = sol.name
+        if errors ||= ! get_errors(:platform => plat, :solution => sol).empty?
+          data_name += " (E!)"
+        end
+        g.data(data_name, data)
       end
       g.data(" ", [ 0 ] * self.n.size, '#000000') if n.size > 1
       g.minimum_value = 0
@@ -147,12 +158,18 @@ class Problem
         labels[i] = (i == 0 ? "n = #{n}" : "#{n}")
       end
       platforms.each do | plat |
+        errors = false
         data = [ ]
         self.n.each do | n |
           h = get_measurements(:n => n, :solution => sol, :platform => plat).first
+          errors = true unless h
           data << (h ? h[:time] : 0)
         end
-        g.data(plat.name, data)
+        data_name = plat.name
+        if errors ||= ! get_errors(:platform => plat, :solution => sol).empty?
+          data_name += " (E!)"
+        end
+        g.data(data_name, data)
       end
       g.data(" ", [ 0 ] * self.n.size, '#000000') if n.size > 1
       g.minimum_value = 0
@@ -261,8 +278,10 @@ class Platform
     $stdout.puts "\n  #{name}: #{details}"
     file = "problem/#{prob.name}.rb"
     result_file = "measurement/#{prob.name}-#{self.name}.rb"
+    File.unlink(result_file) rescue nil
     File.open(file, "w+") do | fh |
       fh.puts "require 'benchmark'"
+      fh.puts "$platform = #{plat.name.inspect}"
       fh.puts "$solution = nil"
       fh.puts "n = nil"
       fh.puts "$rfh = File.open(#{result_file.inspect}, 'w+')"
@@ -278,7 +297,12 @@ class Platform
       render_prob fh, prob, :benchmark
       fh.puts '$stderr.puts "FINISHED!"'
       fh.puts 'rescue Exception => err'
-      fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, :problem => #{prob.name.inspect}, :solution => $solution, :n => n, :error => err.to_s, :backtrace => err.backtrace }.inspect + ', ')" 
+      fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, 
+                             :problem => #{prob.name.inspect}, 
+                             :solution => $solution, 
+                             :n => n, 
+                             :error => err.to_s, 
+                             :backtrace => err.backtrace }.inspect + ', ')" 
       fh.puts 'end'
       fh.puts 'exit 0'
       fh.flush
@@ -286,7 +310,15 @@ class Platform
     # system("cat #{file}")
     cmd = "/usr/bin/time #{self.cmd} #{file}"
     $stdout.puts "  #{cmd}"
-    system(cmd)
+    unless result = system(cmd)
+      data = File.read(result_file) rescue nil
+      data ||= '[ ]'
+      data = Kernel.eval(data) || [ ]
+      data << { :platform => plat.name, :error => "#{cmd} failed", :result => result.to_s }
+      File.open(result_file, "w+") do | fh |
+        fh.puts(data.inspect)
+      end
+    end
     self
   end
 
@@ -665,6 +697,7 @@ p.synopsis = <<'END'
 * Beware: case uses #===, not #==.
 * Use x == y when n == 1.
 * Use hash.key?(x) when n > 1.
+* x == y1 && ... is faster than [ ... ].include?(x) up until n == 10.
 * Ruby Set is slower than Hash.
 END
 
@@ -717,8 +750,10 @@ END
 
 ############################################################
 
+f = (ENV['PROBLEM'] || '').split(/,|\s+/)
+# $stderr.puts "PROBLEM = #{f.inspect}"
 Problem.instances.select do | prob |
-  (f = (ENV['PROBLEM'] || '').split(/,|\s+/)).empty? ? true : f.include?(prob.name.to_s)
+  f.empty? ? true : f.include?(prob.name.to_s)
 end.each do | prob |
   prob.measure! if ENV['MEASURE'] == "1"
   prob.graph! if ENV['GRAPH'] == "1"
@@ -736,5 +771,6 @@ if ENV['SLIDES'] == '1'
   # system "#{SCARLET} -g slides -f html slides.textile"
   system "set -x; #{SCARLET} -f html slides.textile > slides/index.html"
   system "set -x; cp image/*.* slides/image"
-  system "set -x; tar -zcvf sildes.tar.gz slides"
+  system "rm -rf ruby_code_tweaks-slides; set -x; cp -rp slides ruby_code_tweaks-slides"
+  system "set -x; tar -zcvf ruby_code_tweaks-slides.tar.gz ruby_code_tweaks-slides"
 end
