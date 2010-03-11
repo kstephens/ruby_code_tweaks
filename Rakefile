@@ -4,7 +4,7 @@ SCARLET = File.expand_path("~/local/src/scarlet/bin/scarlet")
 ENV['SCARLET'] ||= SCARLET
 
 task :default do
-  sh "mkdir -p measurement problem slides/image"
+  sh "mkdir -p problem measurement slides/image"
   ENV['MEASURE'] = '1'
   ENV['GRAPH'] = '1'
   ENV['SLIDES'] = '1'
@@ -12,5 +12,5 @@ task :default do
 end
 
 task :clean do
-  sh "rm -rf measurement problem slides/index.html slides/image slides.textile"
+  sh "rm -rf problem measurement slides/index.html slides/image slides.textile"
 end

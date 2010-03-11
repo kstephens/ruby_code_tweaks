@@ -2,6 +2,7 @@ require 'rubygems'
 gem 'gruff'
 require 'gruff'
 
+require 'date'
 require 'erb'
 require 'pp'
 require 'tempfile'
@@ -42,11 +43,15 @@ class Problem
   def measure!
     return self unless @enabled
 
+    prob = self
+
     $stdout.puts "\n\n==============================================================="
-    $stdout.puts "Problem: #{self.name}"
-    Platform.instances.each do | x |
-      x.exec! self
+    $stdout.puts "Problem: #{prob.name}\n"
+
+    platforms.each do | plat |
+      plat.exec! prob
     end
+    system("cat #{platforms.map{|plat| "measurement/#{prob.name}-#{plat.name}.txt"} * " "} > measurement/#{prob.name}.txt")
 
     self
   end
@@ -118,6 +123,8 @@ class Problem
     max_value = measurements.map{|h| h[:time] || 0}.max
 
     platforms.each do | plat |
+      image_file = "slides/image/#{prob.name}-#{plat.name}.png"
+      $stderr.write "Creating #{image_file}..."
       errors = false
       g = Gruff::Bar.new
       g.title = "#{prob.name} on #{plat.name}" 
@@ -144,11 +151,14 @@ class Problem
       g.minimum_value = 0
       g.maximum_value = max_value
       g.labels = labels
-      g.write(file = "slides/image/#{prob.name}-#{plat.name}.png")
-      $stderr.puts "Created #{file}"
+      g.write(image_file)
+      $stderr.puts "DONE"
     end
 
     solutions.each do | sol |
+      image_file = "slides/image/#{prob.name}-sol#{sol.index}.png"
+      $stderr.write "Creating #{image_file}..."
+
       g = Gruff::Bar.new
       g.title = "#{prob.name} using #{sol.name}" 
       g.sort = false
@@ -175,8 +185,8 @@ class Problem
       g.minimum_value = 0
       g.maximum_value = max_value
       g.labels = labels
-      g.write(file = "slides/image/#{prob.name}-sol#{sol.index}.png")
-      $stderr.puts "Created #{file}"
+      g.write(image_file)
+      $stderr.puts "DONE"
     end
 
     self
@@ -254,11 +264,12 @@ class Platform
     @@instances
   end
 
-  attr_accessor :name, :cmd, :enabled
-  def initialize name, cmd
-    @name, @cmd = name, cmd
+  attr_accessor :name, :cmd, :opts, :enabled
+  def initialize name, cmd, opts = ''
+    @name, @cmd, @opts = name, cmd, opts
+    @cmd = File.expand_path(@cmd)
     @@instances << self
-    @enabled = true
+    @enabled = File.exist?(@cmd)
   end
 
   def details
@@ -275,9 +286,22 @@ class Platform
 
     plat = self
 
-    $stdout.puts "\n  #{name}: #{details}"
     file = "problem/#{prob.name}.rb"
     result_file = "measurement/#{prob.name}-#{self.name}.rb"
+    measurement_txt = "measurement/#{prob.name}-#{plat.name}.txt"
+    
+    cmd = "/usr/bin/time #{self.cmd} #{self.opts} #{file}"
+
+    File.open(measurement_txt, "w+") do | fh |
+      msg = "\n  #{name}: #{details}"
+      $stdout.puts msg
+      fh.puts msg
+
+      msg = "  #{cmd}"
+      $stdout.puts msg
+      fh.puts msg
+    end
+
     File.unlink(result_file) rescue nil
     File.open(file, "w+") do | fh |
       fh.puts "require 'benchmark'"
@@ -295,7 +319,7 @@ class Platform
       end
       fh.puts '$stderr.puts " GO!"'
       render_prob fh, prob, :benchmark
-      fh.puts '$stderr.puts "FINISHED!"'
+      fh.puts '$stderr.puts "\nFINISHED!"'
       fh.puts 'rescue Exception => err'
       fh.puts "  $rfh.puts({ :platform => #{plat.name.inspect}, 
                              :problem => #{prob.name.inspect}, 
@@ -308,8 +332,8 @@ class Platform
       fh.flush
     end
     # system("cat #{file}")
-    cmd = "/usr/bin/time #{self.cmd} #{file}"
-    $stdout.puts "  #{cmd}"
+
+    cmd = "( #{cmd} ) 2>&1 | tee -a #{measurement_txt}"
     unless result = system(cmd)
       data = File.read(result_file) rescue nil
       data ||= '[ ]'
@@ -361,7 +385,8 @@ end
 Platform.new("MRI-1.8.6-p399",   "~/local/ruby/1.8.6-p399/bin/ruby")
 Platform.new("MRI-1.8.7", "/usr/bin/ruby")
 Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
-Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
+#Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
+Platform.new("JRuby-1.4", "~/local/jruby-1.4.0/bin/jruby", '--fast')
 Platform.new("Rubinius", "~/local/rubinius/trunk/bin/rbx")
 
 ########################################################
@@ -443,6 +468,61 @@ p.synopsis = <<'END'
 * Newer ruby implementations recognize tail position returns.
 * No return keyword == less code.
 * Easier to debug and move expressions around later.
+END
+
+############################################################
+
+p = Problem.new(:string_formatting)
+p.description = 'Format a String'
+p.n = [ 10_000_000 ]
+p.setup = <<'END'
+  foobar = "foobar"
+END
+p.around = <<END
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "String#%", <<'END'
+  "%s, %d" % [ foobar, n ]
+END
+
+s = p.solution "String interpolation", <<'END'
+  "#{foobar}, #{n}"
+END
+
+p.synopsis = <<'END'
+* String interpolation is faster.
+* Rubinius String#% is very slow.
+END
+
+############################################################
+
+p = Problem.new(:string_to_symbol)
+p.description = 'Construct a Symbol from a String.'
+p.n = [ 10_000_000 ]
+p.setup = <<'END'
+  foobar = "foobar"
+END
+p.around = <<END
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "String#to_sym", <<'END'
+  (foobar + "123").to_sym
+END
+
+s = p.solution "Dynamic Symbol", <<'END'
+  :"#{foobar}123"
+END
+
+p.synopsis = <<'END'
+* :"symbol" is faster on all except MRI 1.9.
 END
 
 ############################################################
@@ -770,7 +850,13 @@ if ENV['SLIDES'] == '1'
   SCARLET = (ENV['SCARLET'] ||= File.expand_path("~/local/src/scarlet/bin/scarlet"))
   # system "#{SCARLET} -g slides -f html slides.textile"
   system "set -x; #{SCARLET} -f html slides.textile > slides/index.html"
-  system "set -x; cp image/*.* slides/image"
+  system "set -x; cp -p image/*.* slides/image"
+  system "rm -rf slides/problem; set -x; cp -rp problem slides/problem"
+  system "rm -rf slides/measurement; set -x; cp -rp measurement slides/measurement; rm -f slides/measurement/*.rbc"
   system "rm -rf ruby_code_tweaks-slides; set -x; cp -rp slides ruby_code_tweaks-slides"
   system "set -x; tar -zcvf ruby_code_tweaks-slides.tar.gz ruby_code_tweaks-slides"
+end
+
+if ENV['PUBLISH'] == '1'
+  system "rsync -aruzv slides kscom:~/kurtstephens.com/priv/ruby/ruby_code_tweaks/"
 end

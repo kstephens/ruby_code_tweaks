@@ -2,6 +2,7 @@
 
 h1. Ruby Code Performance Tweaks
 
+* DRAFT <%= Date.today.to_s %>
 * Kurt Stephens - kurt@enovafinancial.com
 * Enova Financial
 
@@ -10,11 +11,11 @@ h1. Ruby Code Performance Tweaks
 h1. Why bother?
 
 * Layers.
-* Ruby platforms and language versions perform differently.
-* Performance of common Ruby idioms are:
-** Conveinent
+* Common Ruby idioms are (sometimes):
 ** Concise
-** Counter-intuitive
+** Elegant
+** Performant
+* Ruby platforms and language versions perform differently with the same code.
 
 !SLIDE
 
@@ -22,7 +23,8 @@ h1. Layers
 
 * Decomposition
 * Reuse, Reliability
-* Layer Pyramids become Depedency Funnels
+* Layer Pyramids become Dependency Funnels
+* Lower layers are bottlenecks, until they are tuned.
 
 !SLIDE
 
@@ -60,8 +62,31 @@ h2. make friends with:
 * programmers - efficency, style
 * platforms - implementation techniques
 * algorithms - O(1), O(N), O(log N), O(N ^ 2)
-* space - structure, garbage collection
+* space - structure, allocation and garbage collection costs
 * time - is money
+
+h2. The best performing idiom might:
+* not be the most elegant idiom.
+* might not be the most intuitive idiom.
+* might not work best for your platform.
+
+!SLIDE
+
+h1. Thoughts
+
+h2. These Benchmarks:
+* are very low-level, narrow and specific.
+* will not extrapolate to represent your applications overall performance.
+* are not comprehensive or real-world comparisons of different Ruby platforms.
+* may be due to misconfiguration - run these tests yourself.
+
+h2. Do your own research
+* Dispell your own myths about what good Ruby code is.
+* Fix your code before blaming Ruby - clean, profiled code works best everywhere.
+* See what works for you.
+* Measure, then measure again.
+
+
 
 <% Problem.instances.each do | prob | %>
 
@@ -102,9 +127,19 @@ h1. Solution <%= sol.index %>: <%= sol.name %>
 
 !SLIDE
 
+<% code_rb = "problem/#{prob.name}.rb" %>
+<% out_txt = "measurement/#{prob.name}.txt" %>
+
 h1. Results
 
-n = <%= prob.n * ', ' %>
+* n = <%= prob.n * ', ' %>
+* Test script: <a href="<%= code_rb %>"><%= code_rb %></a>
+* Test output: <a href="<%= out_txt %>"><%= out_txt %></a>
+* Measurements by platform:
+<% prob.platforms.each do | plat |
+     measurement_rb = "measurement/#{prob.name}-#{plat.name}.rb" %>
+** <%= plat.name %>: <a href="<%= measurement_rb %>"><%= measurement_rb %></a>
+<% end %>
 
 <% prob.platforms.each do | plat | %>
 !SLIDE
