@@ -383,10 +383,12 @@ end
 
 #Platform.new("MRI-1.8.6-p287",   "~/local/ruby/1.8.6-p287/bin/ruby")
 Platform.new("MRI-1.8.6-p399",   "~/local/ruby/1.8.6-p399/bin/ruby")
-Platform.new("MRI-1.8.7", "/usr/bin/ruby")
+#Platform.new("MRI-1.8.7", "/usr/bin/ruby")
+Platform.new("MRI-1.8.7", "~/local/ruby/1.8.7-git/bin/ruby")
 Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
 #Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
 Platform.new("JRuby-1.4", "~/local/jruby-1.4.0/bin/jruby", '--fast')
+Platform.new("Rubinius-ks", "~/local/rubinius/kstephens/bin/rbx")
 Platform.new("Rubinius", "~/local/rubinius/trunk/bin/rbx")
 
 ########################################################
@@ -474,7 +476,7 @@ END
 
 p = Problem.new(:string_formatting)
 p.description = 'Format a String'
-p.n = [ 10_000_000 ]
+p.n = [ 1_000_000 ]
 p.setup = <<'END'
   foobar = "foobar"
 END
