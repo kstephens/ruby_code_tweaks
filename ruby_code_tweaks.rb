@@ -127,9 +127,17 @@ s = p.solution "String interpolation", <<'END'
   "#{foobar}, #{n}"
 END
 
+s = p.solution "SprintfCompiler", <<'END'
+  SprintfCompiler.format("%s, %d", [ foobar, n ])
+END
+s.before = <<'END'
+require 'sprintf_compiler'
+END
+
 p.synopsis = <<'END'
 * String interpolation is faster.
-* Rubinius String#% is very slow.
+* Rubinius String#% is slow.
+* SprintfCompiler speeds up Rubinius for common formats.
 END
 
 ############################################################
