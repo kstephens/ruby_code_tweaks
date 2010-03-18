@@ -20,8 +20,8 @@ class SprintfCompiler
     @format = f
   end
 
-  RADIXES = {"b" => 2, "o" => 8, "d" => 10, "x" => 16}
-  RADIXES.each { | k, v | RADIXES[k.upcase] = v }
+  RADIXES = {?b => 2, ?o => 8, ?d => 10, ?i => 10, ?x => 16}
+  RADIXES.each { | k, v | RADIXES[k.chr.upcase[0]] = v }
   RADIXES.freeze
   ALTERNATIVES = {"o" => "0", "b" => "0b", "B" => "0B", "x" => "0x", "X" => "0X"}
 
@@ -44,38 +44,49 @@ class SprintfCompiler
 
   def compile!
     @template = ''
-    @argi = -1
+
+    @arg_i = -1
+    @arg_i_max = 0
+    @arg_pos_used = false
+    @arg_rel_used = false
+
     @var_i = 0
     @var_exprs = [ ]
 
+
     f = @format
 
-    #          %flag       width       . prec     kind
-    #           1          2             3        4
-    while m = /%([-+0]+)?(?:(\d+|\*)(?:\.(\d+))?)?([scdboxBOXfg%])/.match(f)
+    #          %flag        arg_pos        width       . prec     type
+    #           1           2              3             4        5
+    while m = @m = /%([-+0]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxBOXfgFG%])/.match(f)
+      flags = m[1] || EMPTY_STRING
+      @arg_pos = m[2]; @arg_pos &&= @arg_pos.to_i
+      @width = m[3]
+      precision = m[4]
+      typec = (type = m[5])[0]
+
+      @flags_zero = flags.include?(ZERO)
+
       gen_lit m.pre_match
       f = m.post_match
       # $stderr.puts "m = #{m.to_a.inspect}"
 
-      if (type = m[4]) == PERCENT
+      if (type = m[5]) == PERCENT
         gen_lit(PERCENT)
         next
       end
 
-      flags = m[1] || EMPTY_STRING
+      @width = get_arg if @width == STAR
+      break if @error_class
+
+      arg_expr = get_arg
+      break if @error_class
+
       direction = flags.include?(MINUS) ? :ljust : :rjust
 
-      pad = PAD_SPACE
-      pad = PAD_ZERO if flags.include?(ZERO)
+      pad = @flags_zero ? PAD_ZERO : PAD_SPACE
 
-      width = m[2]
-      width = "args[#{@argi += 1}]" if width == STAR
-
-      precision = m[3]
-
-      arg_expr = "args[#{@argi += 1}]"
-
-      case type[0]
+      case typec
       when ?s
         pad = PAD_SPACE
         expr = "#{arg_expr}.to_s"
@@ -85,8 +96,8 @@ class SprintfCompiler
         gen_var_expr "#{var} = #{var}.to_int if #{var}.respond_to?(:to_int)"
         expr = "::#{self.class.name}::CHAR_TABLE[#{var} % 256]"
         @debug = true
-      when ?d
-        if flags.include?(ZERO)
+      when ?d, ?i
+        if @flags_zero
           direction = :rjust 
           var = gen_var arg_expr
           gen_var_expr <<"END"
@@ -96,10 +107,10 @@ class SprintfCompiler
 END
           arg_expr = var
         end
-        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[type]})"
+        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
       when ?b, ?o, ?x, ?B, ?O, ?X
-        direction = :rjust if flags.include?(ZERO)
-        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[type]})"
+        direction = :rjust if @flags_zero
+        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
         if type == 'X'
           expr << '.upcase'
         end
@@ -107,19 +118,18 @@ END
         fmt = "%"
         fmt << SPACE if pad == PAD_SPACE
         fmt << MINUS if flags.include?(MINUS)
-        fmt << ZERO  if pad == PAD_ZERO
-        fmt << width if width
+        fmt << ZERO  if @flags_zero
+        fmt << @width if @width
         fmt << DOT << precision if precision
         fmt << type
         expr = "#{arg_expr}.to_f.send(:to_formatted_s, #{fmt.inspect})"
       else
-        @error_class = ArgumentError
-        @error_msg = "malformed format string - #{m[0]}"
+        gen_error ArgumentError, "malformed format string - #{m[0]}"
         return self
       end
 
-      if width 
-        expr << ".#{direction}(#{width}"
+      if @width 
+        expr << ".#{direction}(#{@width}"
         expr << ', ' << pad if pad != PAD_SPACE
         expr << ")"
       end
@@ -131,6 +141,26 @@ END
     proc_expr
 
     self
+  end
+
+  def get_arg
+    if @arg_pos
+      @arg_pos_used = true
+      arg_i = @arg_pos - 1
+    else
+      @arg_rel_used = true
+      arg_i = (@arg_i += 1)
+    end
+    if @arg_rel_used && @arg_pos_used
+      return gen_error ArgumentError, "Cannot use both positional and relative formats in #{@m[0]}" # FIXME
+    end
+    @arg_i_max = arg_i if @arg_i_max < arg_i
+    "args[#{arg_i}]"
+  end
+
+  def gen_error cls, fmt
+    @error_class, @error_msg = cls, fmt
+    nil
   end
 
   def gen_var expr = 'nil'
@@ -165,14 +195,13 @@ end
 END
   rescue Exception => err
     $stderr.puts "ERROR: #{err} in\n#{proc_expr}"
-    @error_class = err.class
-    @error_msg   = err.message
+    gen_error err.class, err.message
     @proc = lambda { | args | raise @error_class, @error_message }
   end
 
   def proc_expr
     @proc_expr ||= <<"END"
-  raise ArgumentError, "too few arguments" if args.size < #{@argi + 1}
+  raise ArgumentError, "too few arguments" if args.size < #{@arg_i_max + 1}
   #{@var_exprs * "\n"}
   "#{@template}"
 END
@@ -205,6 +234,8 @@ require 'pp'
   [ 's', 'c', 'd', 'x', 'b', 'X' ].map do | x |
     [
      "%#{x}", 
+     "%1$#{x}",
+     "%2$#{x}",
      "%10#{x}",
      "%-10#{x}",
      "%010#{x}",
