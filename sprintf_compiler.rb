@@ -36,18 +36,26 @@ class SprintfCompiler
   MINUS        = '-'.freeze
   STAR         = '*'.freeze
   PERCENT      = '%'.freeze
+  DOT          = '.'.freeze
 
   PAD_SPACE    = "::#{self.name}::SPACE".freeze
   PAD_ZERO     = "::#{self.name}::ZERO".freeze
 
+  CHAR_TABLE = { }
+  (0 .. 255).each { | i | CHAR_TABLE[i] = i.chr.freeze }
+  CHAR_TABLE.freeze
+
   def compile!
     @template = ''
     @argi = -1
+    @var_i = 0
+    @var_exprs = [ ]
+
     f = @format
 
     #          %flag       width       . prec     kind
     #           1          2             3        4
-    while m = /%([-+0]+)?(?:(\d+|\*)(?:\.(\d+))?)?([sdboxBOXfg%])/.match(f)
+    while m = /%([-+0]+)?(?:(\d+|\*)(?:\.(\d+))?)?([scdboxBOXfg%])/.match(f)
       gen_lit m.pre_match
       f = m.post_match
       # $stderr.puts "m = #{m.to_a.inspect}"
@@ -70,23 +78,41 @@ class SprintfCompiler
 
       arg_expr = "args[#{@argi += 1}]"
 
-      case type
-      when 's'
+      case type[0]
+      when ?s
         pad = PAD_SPACE
         expr = "#{arg_expr}.to_s"
-      when 'd', 'b', 'u', 'x', 'B', 'U', 'X'
+      when ?c
+        pad = PAD_SPACE
+        var = gen_var arg_expr
+        gen_var_expr "#{var} = #{var}.to_int if #{var}.respond_to?(:to_int)"
+        expr = "::#{self.class.name}::CHAR_TABLE[#{var} % 256]"
+        @debug = true
+      when ?d
+        if flags.include?(ZERO)
+          direction = :rjust 
+          var = gen_var arg_expr
+          gen_var_expr <<"END"
+  if #{var} < 0
+    
+  end
+END
+          arg_expr = var
+        end
+        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[type]})"
+      when ?b, ?o, ?x, ?B, ?O, ?X
         direction = :rjust if flags.include?(ZERO)
         expr = "#{arg_expr}.to_i.to_s(#{RADIXES[type]})"
         if type == 'X'
           expr << '.upcase'
         end
-      when 'f', 'F', 'g', 'G'
+      when ?f, ?F, ?g, ?G
         fmt = "%"
         fmt << SPACE if pad == PAD_SPACE
         fmt << MINUS if flags.include?(MINUS)
         fmt << ZERO  if pad == PAD_ZERO
         fmt << width if width
-        fmt << '.' << precision if precision
+        fmt << DOT << precision if precision
         fmt << type
         expr = "#{arg_expr}.to_f.send(:to_formatted_s, #{fmt.inspect})"
       else
@@ -108,6 +134,16 @@ class SprintfCompiler
     proc_expr
 
     self
+  end
+
+  def gen_var expr = 'nil'
+    var = "l_#{@var_i +=1 }"
+    @var_exprs << "#{var} = #{expr}"
+    var
+  end
+
+  def gen_var_expr expr
+    @var_exprs << expr
   end
 
   def gen_lit str
@@ -140,6 +176,7 @@ END
   def proc_expr
     @proc_expr ||= <<"END"
   raise ArgumentError, "too few arguments" if args.size < #{@argi + 1}
+  #{@var_exprs * "\n"}
   "#{@template}"
 END
   end
@@ -168,7 +205,7 @@ if $0 == __FILE__
 require 'pp'
 
 [ '', 
-  [ 's', 'd', 'x', 'b', 'X' ].map do | x |
+  [ 's', 'c', 'd', 'x', 'b', 'X' ].map do | x |
     [
      "%#{x}", 
      "%10#{x}",
@@ -182,24 +219,28 @@ require 'pp'
   [ '%f', '%g' ],
 ].flatten.each do | x |
   fmt = "alks #{x} jdfa"
-  args = [ 20, 42 ]
-  sc = SprintfCompiler.new(fmt).compile!.define_format_method!
-  expected = sc.format % args 
-  result = sc % args
-  if result != expected
-    $stderr.puts <<"END"
-ERROR:
+  [ [ 20, 42 ], [ -20, -42 ] ].each do | args |
+    sc = SprintfCompiler.new(fmt).compile!.define_format_method!
+    expected = sc.format % args 
+    result = sc % args
+    if result != expected
+      $stderr.puts <<"END"
+###########################################
+# ERROR:
 format:   #{fmt.inspect} % #{args.inspect}
 expected: #{expected.inspect}
 result:   #{result.inspect}
+
 END
-    pp sc
-  else
+        pp sc
+      else
     $stdout.puts <<"END"
 format:   #{fmt.inspect} % #{args.inspect}
 result:   #{result.inspect}
+
 END
-  end
+      end
+    end
 end
 
 end
