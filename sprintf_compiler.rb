@@ -13,10 +13,10 @@ class SprintfCompiler
       INSTANCE_MUTEX.synchronize do 
         fmt_dup = fmt.frozen? ? fmt : fmt.dup.freeze
         instance = INSTANCE_CACHE[fmt_dup] = self.new(fmt_dup)
-        instance.compile!.proc
+        instance.compile!.define_format_method!
       end
     end
-    instance % args
+    instance.fmt(args)
   end
 
   def initialize f
@@ -43,7 +43,8 @@ class SprintfCompiler
   def compile!
     @template = ''
     @argi = -1
-    f = @format.dup
+    f = @format
+
     #          %flag       width       . prec     kind
     #           1          2             3        4
     while m = /%([-+0]+)?(?:(\d+|\*)(?:\.(\d+))?)?([sdboxBOXfg%])/.match(f)
@@ -89,7 +90,8 @@ class SprintfCompiler
         fmt << type
         expr = "#{arg_expr}.to_f.send(:to_formatted_s, #{fmt.inspect})"
       else
-        @error = [ ArgumentError, "malformed format string - #{m[0]}" ]
+        @error_class = ArgumentError
+        @error_msg = "malformed format string - #{m[0]}"
         return self
       end
 
@@ -123,24 +125,39 @@ class SprintfCompiler
   
   def proc
     @proc ||=
-      eval proc_expr
+      eval <<"END", __FILE__, __LINE__
+lambda do | args |
+#{proc_expr}
+end
+END
   rescue Exception => err
     $stderr.puts "ERROR: #{err} in\n#{proc_expr}"
-    @error = [ err.class, err.message ]
-    @proc = lambda { | args | raise @error[0], @error[1] }
+    @error_class = err.class
+    @error_msg   = err.message
+    @proc = lambda { | args | raise @error_class, @error_message }
   end
 
   def proc_expr
     @proc_expr ||= <<"END"
-lambda do | args |
   raise ArgumentError, "too few arguments" if args.size < #{@argi + 1}
   "#{@template}"
-end
 END
   end
 
+  def define_format_method!
+    instance_eval <<"END"
+def self.fmt args
+  # $stderr.puts "\#{self}.fmt \#{args.inspect}\n\#{caller.inspect}"
+  raise @error_class, @error_msg if @error_class
+  #{proc_expr}
+end
+alias :% :fmt
+END
+   self
+  end
+
   def % args
-    raise @error[0], @error[1] if @error
+    raise @error_class, @error_msg if @error_class
     proc.call(args)
   end
 
@@ -166,7 +183,7 @@ require 'pp'
 ].flatten.each do | x |
   fmt = "alks #{x} jdfa"
   args = [ 20, 42 ]
-  sc = SprintfCompiler.new(fmt).compile!
+  sc = SprintfCompiler.new(fmt).compile!.define_format_method!
   expected = sc.format % args 
   result = sc % args
   if result != expected
