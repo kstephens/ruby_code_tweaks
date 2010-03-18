@@ -25,8 +25,6 @@ class SprintfCompiler
   RADIXES.freeze
   ALTERNATIVES = {"o" => "0", "b" => "0b", "B" => "0B", "x" => "0x", "X" => "0X"}
 
-  RELATIVE_ARG_EXPR = "args[argi += 1]"
-  
   EMPTY_STRING = ''.freeze
   SPACE        = ' '.freeze
   ZERO         = '0'.freeze
@@ -34,6 +32,7 @@ class SprintfCompiler
   STAR         = '*'.freeze
   PERCENT      = '%'.freeze
   DOT          = '.'.freeze
+  DQUOTE       = '"'.freeze
 
   PAD_SPACE    = "::#{self.name}::SPACE".freeze
   PAD_ZERO     = "::#{self.name}::ZERO".freeze
@@ -56,33 +55,43 @@ class SprintfCompiler
 
     f = @format
 
-    #          %flag        arg_pos        width       . prec     type
-    #           1           2              3             4        5
-    while m = @m = /%([-+0]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxBOXfgFG%])/.match(f)
+    #               %flags       arg_pos       width        . prec   type
+    #                1           2             3            4        5
+    while m = /%([-+0]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxBOXfegEG%])/.match(f)
+      @m = m
+      # $stderr.puts "m = #{m.to_a.inspect}"
+      prefix_expr = nil
+
+      gen_lit m.pre_match
+      f = m.post_match
+
       flags = m[1] || EMPTY_STRING
+      @flags_zero  = flags.include?(ZERO)
+      @flags_minus = flags.include?(MINUS)
+      @flags_space = flags.include?(SPACE)
       @arg_pos = m[2]; @arg_pos &&= @arg_pos.to_i
       @width = m[3]
       precision = m[4]
       typec = (type = m[5])[0]
 
-      @flags_zero = flags.include?(ZERO)
-
-      gen_lit m.pre_match
-      f = m.post_match
-      # $stderr.puts "m = #{m.to_a.inspect}"
-
-      if (type = m[5]) == PERCENT
+      if typec == ?%
+        if @width
+          gen_error ArgumentError, "illegal format character - #{type}"
+          return self
+        end
         gen_lit(PERCENT)
         next
       end
 
-      @width = get_arg if @width == STAR
+      if @width_star = (@width == STAR)
+        @width = get_arg 
+      end
       break if @error_class
 
       arg_expr = get_arg
       break if @error_class
 
-      direction = flags.include?(MINUS) ? :ljust : :rjust
+      direction = @flags_minus ? :ljust : :rjust
 
       pad = @flags_zero ? PAD_ZERO : PAD_SPACE
 
@@ -90,52 +99,116 @@ class SprintfCompiler
       when ?s
         pad = PAD_SPACE
         expr = "#{arg_expr}.to_s"
+
       when ?c
         pad = PAD_SPACE
         var = gen_var arg_expr
         gen_var_expr "#{var} = #{var}.to_int if #{var}.respond_to?(:to_int)"
         expr = "::#{self.class.name}::CHAR_TABLE[#{var} % 256]"
         @debug = true
+
       when ?d, ?i
         if @flags_zero
           direction = :rjust 
-          var = gen_var arg_expr
+          @width  = gen_var @width
+          arg_var = gen_var arg_expr
+          prefix_expr = gen_var "::#{self.class.name}::EMPTY_STRING"
           gen_var_expr <<"END"
-  if #{var} < 0
-    
+  if #{arg_var} < 0
+    #{arg_var}     = - #{arg_var}
+    #{@width}      = #{@width} - 1
+    #{prefix_expr} = ::#{self.class.name}::MINUS
   end
 END
-          arg_expr = var
+          arg_expr = arg_var
         end
         expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+
       when ?b, ?o, ?x, ?B, ?O, ?X
         direction = :rjust if @flags_zero
         expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
         if type == 'X'
           expr << '.upcase'
         end
-      when ?f, ?F, ?g, ?G
+
+      when ?f, ?e, ?E, ?g, ?G
+        if typec == ?e || typec == ?E
+          precision = nil
+        else
+          precision ||= '4'
+        end
         fmt = "%"
-        fmt << SPACE if pad == PAD_SPACE
-        fmt << MINUS if flags.include?(MINUS)
+        fmt << SPACE if @flags_space
+        fmt << MINUS if @flags_minus
         fmt << ZERO  if @flags_zero
-        fmt << @width if @width
+        if @width
+          # Width is dynamic.
+          if @width_star
+            width_var = gen_var @width
+            fmt << '#{' << width_var << '}'
+          else
+            fmt << @width
+          end
+        end
         fmt << DOT << precision if precision
         fmt << type
-        expr = "#{arg_expr}.to_f.send(:to_formatted_s, #{fmt.inspect})"
+
+        # Width is dynamic.
+        if @width_star
+          fmt = %Q{"#{fmt}"}
+        else
+          fmt = fmt.inspect
+        end
+        # $stdout.puts "  fmt = #{fmt.inspect}"
+
+        expr = "#{arg_expr}.to_f"
+
+        case RUBY_DESCRIPTION
+        when /^ruby/
+          expr = "Kernel.sprintf(#{fmt}, #{expr})"
+        when /^rubinius/
+          expr = "#{expr}.send(:to_formatted_s, #{fmt})"
+        end
+
       else
         gen_error ArgumentError, "malformed format string - #{m[0]}"
         return self
       end
 
+      if prefix_expr
+        gen_expr prefix_expr
+      end
+
       if @width 
-        expr << ".#{direction}(#{@width}"
-        expr << ', ' << pad if pad != PAD_SPACE
-        expr << ")"
+        # Optimize for constant width:
+        if @width =~ /^\d+$/
+          expr << ".#{direction}(#{@width}"
+          expr << ', ' << pad if pad != PAD_SPACE
+          expr << ")"
+        else
+=begin
+          $stdout.puts "  direction   = #{direction.inspect}"
+          $stdout.puts "  flags_minus = #{@flags_minus.inspect}"
+=end
+          # direction = :rjust
+          direction = :rjust if @flag_minus
+          direction_other = (direction == :ljust ? :rjust : :ljust)
+          # direction, direction_other = direction_other, direction if @flags_minus
+          # @width = (@flags_minus ? "- " : '') + @width if @flags_minus
+          @width = @width + (@flags_minus ? '.abs' : '') if @flags_minus
+
+          expr_var  = gen_var expr
+          width_var = gen_var @width
+          gen_var_expr <<"END"
+#{expr_var} = (#{width_var} >= 0 ? #{expr_var}.#{direction}(#{width_var}, #{pad}) : #{expr_var}.#{direction_other}(- #{width_var}, #{pad}))
+END
+          expr = expr_var
+        end
       end
 
       gen_expr expr
     end
+    
     gen_lit f
 
     proc_expr
@@ -157,6 +230,11 @@ END
     @arg_i_max = arg_i if @arg_i_max < arg_i
     "args[#{arg_i}]"
   end
+
+
+  ####################################################################
+  # Code generation
+  #
 
   def gen_error cls, fmt
     @error_class, @error_msg = cls, fmt
@@ -183,9 +261,14 @@ END
 
     # peephole optimization for implicit #to_s call during #{...}
     expr.sub!(/\.to_s$/, '') 
+
     @template << '#{' << expr << '}'
   end
   
+  ####################################################################
+  # Ruby compilation and invocation.
+  #
+
   def proc
     @proc ||=
       eval <<"END", __FILE__, __LINE__
@@ -219,10 +302,12 @@ END
    self
   end
 
-  def % args
+  def fmt args
     raise @error_class, @error_msg if @error_class
+    define_format_method!
     proc.call(args)
   end
+  alias :% :fmt
 
 end
 
@@ -230,8 +315,14 @@ end
 if $0 == __FILE__
 require 'pp'
 
+def trap_error 
+  yield
+rescue Exception => err
+  [ err.class, err.message ]
+end
+
 [ '', 
-  [ 's', 'c', 'd', 'x', 'b', 'X' ].map do | x |
+  [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G' ].map do | x |
     [
      "%#{x}", 
      "%1$#{x}",
@@ -244,15 +335,20 @@ require 'pp'
      "%-*#{x}", 
     ]
   end,
-  [ '%f', '%g' ],
 ].flatten.each do | x |
   fmt = "alks #{x} jdfa"
   [ [ 20, 42 ], [ -20, -42 ] ].each do | args |
+    $stdout.puts <<"END"
+format:   #{fmt.inspect} % #{args.inspect}
+END
+
     sc = SprintfCompiler.new(fmt).compile!.define_format_method!
-    expected = sc.format % args 
-    result = sc % args
+
+    expected = trap_error { sc.format % args }
+    result = trap_error { sc % args }
+
     if result != expected
-      $stderr.puts <<"END"
+      $stdout.puts <<"END"
 ###########################################
 # ERROR:
 format:   #{fmt.inspect} % #{args.inspect}
@@ -263,7 +359,6 @@ END
         pp sc
       else
     $stdout.puts <<"END"
-format:   #{fmt.inspect} % #{args.inspect}
 result:   #{result.inspect}
 
 END
