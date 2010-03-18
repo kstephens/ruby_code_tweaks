@@ -38,7 +38,7 @@ class SprintfCompiler
   PAD_SPACE    = "::#{self.name}::SPACE".freeze
   PAD_ZERO     = "::#{self.name}::ZERO".freeze
 
-  CHAR_TABLE = { }
+  CHAR_TABLE = [ ]
   (0 .. 255).each { | i | CHAR_TABLE[i] = i.chr.freeze }
   CHAR_TABLE.freeze
 
