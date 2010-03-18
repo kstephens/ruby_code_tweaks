@@ -7,13 +7,13 @@ class SprintfCompiler
   
   INSTANCE_CACHE = { }
 
-  def self.format fmt, args
-    unless instance = INSTANCE_CACHE[fmt]
+  def self.fmt fmt, args
+    unless instance = (fmt && INSTANCE_CACHE[fmt])
       fmt_dup = fmt.frozen? ? fmt : fmt.dup.freeze
       instance = INSTANCE_CACHE[fmt_dup] = self.new(fmt_dup)
       instance.compile!.define_format_method!
     end
-    instance.fmt(args)
+    instance % args
   end
 
   def initialize f
@@ -42,15 +42,14 @@ class SprintfCompiler
   CHAR_TABLE.freeze
 
   def compile!
-    @template = ''
+    @str_template = ''
 
-    @arg_i = -1
-    @arg_i_max = 0
+    @arg_i = @arg_i_max = -1
     @arg_pos_used = false
     @arg_rel_used = false
 
     @var_i = 0
-    @var_exprs = [ ]
+    @exprs = [ ]
 
 
     f = @format
@@ -72,10 +71,14 @@ class SprintfCompiler
       @arg_pos = m[2]
       @arg_pos &&= @arg_pos.to_i
       @width = m[3]
+      @width_star = (@width == STAR)
       precision = m[4]
       typec = (type = m[5])[0]
 
       if typec == ?%
+        if @arg_pos || @width_star # "%$1%" or "%*%"
+          get_arg 
+        end
         if @width || @flags_space || @flags_zero
           gen_error ArgumentError, "illegal format character - #{type}"
           return self
@@ -258,16 +261,16 @@ END
 
   def gen_var expr = 'nil'
     var = "l_#{@var_i +=1 }"
-    @var_exprs << "#{var} = #{expr}"
+    @exprs << "#{var} = #{expr}"
     var
   end
 
   def gen_var_expr expr
-    @var_exprs << expr
+    @exprs << expr
   end
 
   def gen_lit str
-    @template << str.inspect[1 .. -2] unless str.empty?
+    @str_template << str.inspect[1 .. -2] unless str.empty?
   end
 
   def gen_expr expr
@@ -277,7 +280,7 @@ END
     # peephole optimization for implicit #to_s call during #{...}
     expr.sub!(/\.to_s$/, '') 
 
-    @template << '#{' << expr << '}'
+    @str_template << '#{' << expr << '}'
   end
   
   ####################################################################
@@ -299,17 +302,29 @@ END
 
   def proc_expr
     @proc_expr ||= <<"END"
-  raise ArgumentError, "too few arguments" if args.size < #{@arg_i_max + 1}
-  #{@var_exprs * "\n"}
-  "#{@template}"
+  #{arg_check_expr}
+  #{@exprs * "\n"}
+  "#{@str_template}"
 END
+  end
+
+  def arg_check_expr
+    if @arg_i_max != -1
+      %Q{raise ArgumentError, "too few arguments" if (args = args.to_a).size < #{@arg_i_max + 1}\n}
+    else
+      EMPTY_STRING
+    end + 
+    if @error_class
+      %Q{raise ::#{@error_class.name}, #{@error_msg.inspect}\n}
+    else
+      EMPTY_STRING
+    end
   end
 
   def define_format_method!
     instance_eval <<"END"
 def self.fmt args
   # $stderr.puts "\#{self}.fmt \#{args.inspect}\n\#{caller.inspect}"
-  raise @error_class, @error_msg if @error_class
   #{proc_expr}
 end
 alias :% :fmt
@@ -318,7 +333,6 @@ END
   end
 
   def fmt args
-    raise @error_class, @error_msg if @error_class
     define_format_method!
     proc.call(args)
   end
@@ -336,6 +350,47 @@ rescue Exception => err
   [ err.class, err.message ]
 end
 
+def check fmt, args
+  $stdout.puts <<"END"
+format:   #{fmt.inspect} % #{args.inspect}
+END
+  
+  sc = nil
+  expected = trap_error do
+    fmt % args
+  end
+  result   = trap_error do
+    sc = SprintfCompiler.new(fmt).compile!.define_format_method!
+    sc % args
+  end
+  
+  if result != expected
+    $stdout.puts <<"END"
+###########################################
+# ERROR:
+format:   #{fmt.inspect} % #{args.inspect}
+expected: #{expected.inspect}
+result:   #{result.inspect}
+
+END
+    pp sc
+  else
+    $stdout.puts <<"END"
+result:   #{result.inspect}
+
+END
+  end
+end
+
+check '', nil
+check 'kjasdkfj', nil
+check '%*d', [ ]
+check '%d', nil
+check '%*d', [ ]
+check '%*d', [ 1 ]
+check '%*d', [ 1, 20 ]
+check '%*d', [ 1, 20, 300 ]
+
 [ '', 
   [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G', 'p' ].map do | x |
     [
@@ -346,6 +401,7 @@ end
      "%0#{x}",
      "%10#{x}",
      "%-10#{x}",
+     "% -10#{x}",
      "%010#{x}",
      "%0-10#{x}",
      "%*#{x}",
@@ -354,33 +410,18 @@ end
   end,
 ].flatten.each do | x |
   fmt = "alks #{x} jdfa"
-  [ [ 20, 42 ], [ -20, -42 ] ].each do | args |
-    $stdout.puts <<"END"
-format:   #{fmt.inspect} % #{args.inspect}
-END
-
-    sc = SprintfCompiler.new(fmt).compile!.define_format_method!
-
-    expected = trap_error { sc.format % args }
-    result   = trap_error { sc % args }
-
-    if result != expected
-      $stdout.puts <<"END"
-###########################################
-# ERROR:
-format:   #{fmt.inspect} % #{args.inspect}
-expected: #{expected.inspect}
-result:   #{result.inspect}
-
-END
-        pp sc
-      else
-    $stdout.puts <<"END"
-result:   #{result.inspect}
-
-END
-      end
-    end
+  [ 
+   [ ],
+   [ 42 ],
+   [ -42 ],
+   [ 12345678901234567890 ],
+   [ -12345678901234567890 ],
+   [ 20, 42 ], 
+   [ -20, -42 ], 
+   [ 20, 12345678901234567890 ],
+  ].each do | args |
+    check fmt, args
+  end
 end
 
 end
