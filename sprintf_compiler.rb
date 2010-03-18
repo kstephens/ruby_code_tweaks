@@ -6,15 +6,12 @@ class SprintfCompiler
   attr_reader :proc
   
   INSTANCE_CACHE = { }
-  INSTANCE_MUTEX = Mutex.new
 
   def self.format fmt, args
     unless instance = INSTANCE_CACHE[fmt]
-      INSTANCE_MUTEX.synchronize do 
-        fmt_dup = fmt.frozen? ? fmt : fmt.dup.freeze
-        instance = INSTANCE_CACHE[fmt_dup] = self.new(fmt_dup)
-        instance.compile!.define_format_method!
-      end
+      fmt_dup = fmt.frozen? ? fmt : fmt.dup.freeze
+      instance = INSTANCE_CACHE[fmt_dup] = self.new(fmt_dup)
+      instance.compile!.define_format_method!
     end
     instance.fmt(args)
   end
