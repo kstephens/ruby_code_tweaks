@@ -55,9 +55,9 @@ class SprintfCompiler
 
     f = @format
 
-    #               %flags       arg_pos       width        . prec   type
-    #                1           2             3            4        5
-    while m = /%([-+0]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxBOXfegEG%])/.match(f)
+    #           %flags       arg_pos       width        prec     type
+    #           1            2             3            4        5
+    while m = /%([-+0 ]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxXfegEGp%])/.match(f)
       @m = m
       # $stderr.puts "m = #{m.to_a.inspect}"
       prefix_expr = nil
@@ -69,13 +69,14 @@ class SprintfCompiler
       @flags_zero  = flags.include?(ZERO)
       @flags_minus = flags.include?(MINUS)
       @flags_space = flags.include?(SPACE)
-      @arg_pos = m[2]; @arg_pos &&= @arg_pos.to_i
+      @arg_pos = m[2]
+      @arg_pos &&= @arg_pos.to_i
       @width = m[3]
       precision = m[4]
       typec = (type = m[5])[0]
 
       if typec == ?%
-        if @width
+        if @width || @flags_space || @flags_zero
           gen_error ArgumentError, "illegal format character - #{type}"
           return self
         end
@@ -95,6 +96,7 @@ class SprintfCompiler
 
       pad = @flags_zero ? PAD_ZERO : PAD_SPACE
 
+      expr = nil
       case typec
       when ?s
         pad = PAD_SPACE
@@ -108,26 +110,36 @@ class SprintfCompiler
         @debug = true
 
       when ?d, ?i
-        if @flags_zero
+        if @flags_space
+          arg_expr = gen_var arg_expr
+          expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+          str_var = gen_var expr
+          gen_var_expr <<"END"
+  if #{arg_expr} >= 0
+    #{str_var} = ' ' + #{str_var}
+  end
+END
+          expr = str_var
+        end
+        if @flags_zero && @width
           direction = :rjust 
           @width  = gen_var @width
-          arg_var = gen_var arg_expr
+          arg_expr = gen_var arg_expr
           prefix_expr = gen_var "::#{self.class.name}::EMPTY_STRING"
           gen_var_expr <<"END"
-  if #{arg_var} < 0
-    #{arg_var}     = - #{arg_var}
+  if #{arg_expr} < 0
+    #{arg_expr}    = - #{arg_expr}
     #{@width}      = #{@width} - 1
     #{prefix_expr} = ::#{self.class.name}::MINUS
   end
 END
-          arg_expr = arg_var
         end
-        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+        expr ||= "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
 
-      when ?b, ?o, ?x, ?B, ?O, ?X
+      when ?b, ?o, ?x, ?X
         direction = :rjust if @flags_zero
         expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
-        if type == 'X'
+        if typec == ?X
           expr << '.upcase'
         end
 
@@ -170,7 +182,13 @@ END
           expr = "#{expr}.send(:to_formatted_s, #{fmt})"
         end
 
-      else
+      when ?p
+        pad = PAD_SPACE
+        expr = "#{arg_expr}.inspect"
+      
+      end
+
+      unless expr
         gen_error ArgumentError, "malformed format string - #{m[0]}"
         return self
       end
@@ -190,11 +208,8 @@ END
           $stdout.puts "  direction   = #{direction.inspect}"
           $stdout.puts "  flags_minus = #{@flags_minus.inspect}"
 =end
-          # direction = :rjust
           direction = :rjust if @flag_minus
           direction_other = (direction == :ljust ? :rjust : :ljust)
-          # direction, direction_other = direction_other, direction if @flags_minus
-          # @width = (@flags_minus ? "- " : '') + @width if @flags_minus
           @width = @width + (@flags_minus ? '.abs' : '') if @flags_minus
 
           expr_var  = gen_var expr
@@ -316,17 +331,19 @@ if $0 == __FILE__
 require 'pp'
 
 def trap_error 
-  yield
+  [ :ok, yield ]
 rescue Exception => err
   [ err.class, err.message ]
 end
 
 [ '', 
-  [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G' ].map do | x |
+  [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G', 'p' ].map do | x |
     [
      "%#{x}", 
      "%1$#{x}",
      "%2$#{x}",
+     "% #{x}",
+     "%0#{x}",
      "%10#{x}",
      "%-10#{x}",
      "%010#{x}",
@@ -345,7 +362,7 @@ END
     sc = SprintfCompiler.new(fmt).compile!.define_format_method!
 
     expected = trap_error { sc.format % args }
-    result = trap_error { sc % args }
+    result   = trap_error { sc % args }
 
     if result != expected
       $stdout.puts <<"END"
