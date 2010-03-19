@@ -1,4 +1,3 @@
-require 'thread' # Mutex
 
 class SprintfCompiler
   attr_accessor :format
@@ -6,14 +5,17 @@ class SprintfCompiler
   attr_reader :proc
   
   INSTANCE_CACHE = { }
-
-  def self.fmt fmt, args
+  def self.instance fmt
     unless instance = (fmt && INSTANCE_CACHE[fmt])
       fmt_dup = fmt.frozen? ? fmt : fmt.dup.freeze
       instance = INSTANCE_CACHE[fmt_dup] = self.new(fmt_dup)
-      instance.compile!.define_format_method!
+      instance.define_format_method!
     end
-    instance % args
+    instance
+  end
+
+  def self.fmt fmt, args
+    instance(fmt) % args
   end
 
   def initialize f
@@ -21,7 +23,7 @@ class SprintfCompiler
   end
 
   RADIXES = {?b => 2, ?o => 8, ?d => 10, ?i => 10, ?x => 16}
-  RADIXES.each { | k, v | RADIXES[k.chr.upcase[0]] = v }
+  RADIXES.dup.each { | k, v | RADIXES[k.chr.upcase[0]] = v }
   RADIXES.freeze
   ALTERNATIVES = {"o" => "0", "b" => "0b", "B" => "0B", "x" => "0x", "X" => "0X"}
 
@@ -37,11 +39,15 @@ class SprintfCompiler
   PAD_SPACE    = "::#{self.name}::SPACE".freeze
   PAD_ZERO     = "::#{self.name}::ZERO".freeze
 
+  DEFAULT_F_PREC = '6'.freeze
+
   CHAR_TABLE = [ ]
   (0 .. 255).each { | i | CHAR_TABLE[i] = i.chr.freeze }
   CHAR_TABLE.freeze
 
   def compile!
+    return self if @compiled
+    @compiled = true
     @str_template = ''
 
     @arg_i = @arg_i_max = -1
@@ -56,7 +62,7 @@ class SprintfCompiler
 
     #           %flags       arg_pos       width        prec     type
     #           1            2             3            4        5
-    while m = /%([-+0 ]+)?(?:([1-9])\$)?(?:(\d+|\*)(?:\.(\d+))?)?([scdiboxXfegEGp%])/.match(f)
+    while m = /%([-+0 ]+)?(?:([1-9])\$)?(?:(\d+|\*+)(?:\.(\d+))?)?([scdiboxXfegEGp%])/.match(f)
       @m = m
       # $stderr.puts "m = #{m.to_a.inspect}"
       prefix_expr = nil
@@ -71,8 +77,11 @@ class SprintfCompiler
       @arg_pos = m[2]
       @arg_pos &&= @arg_pos.to_i
       @width = m[3]
-      @width_star = (@width == STAR)
+      @width_star = @width && @width.count(STAR)
+      @width_star = nil if @width_star && @width_star < 1
+
       precision = m[4]
+      @limit = nil
       typec = (type = m[5])[0]
 
       if typec == ?%
@@ -80,18 +89,24 @@ class SprintfCompiler
           get_arg 
         end
         if @width || @flags_space || @flags_zero
-          gen_error ArgumentError, "illegal format character - #{type}"
-          return self
+          return gen_error(ArgumentError, "illegal format character - #{type}")
         end
         gen_lit(PERCENT)
         next
       end
 
-      if @width_star = (@width == STAR)
+      # Get the width argument.
+      if @width_star
         @width = get_arg 
       end
       break if @error_class
 
+      # Check for multiple width arguments.
+      if @width_star && @width_star > 1
+        return gen_error(ArgumentError, "width given twice")
+      end
+
+      # Get the value argument.
       arg_expr = get_arg
       break if @error_class
 
@@ -103,6 +118,7 @@ class SprintfCompiler
       case typec
       when ?s
         pad = PAD_SPACE
+        @limit = precision
         expr = "#{arg_expr}.to_s"
 
       when ?c
@@ -148,9 +164,9 @@ END
 
       when ?f, ?e, ?E, ?g, ?G
         if typec == ?e || typec == ?E
-          precision = nil
+          # precision = nil
         else
-          precision ||= '4'
+          precision ||= DEFAULT_F_PREC
         end
         fmt = "%"
         fmt << SPACE if @flags_space
@@ -164,6 +180,7 @@ END
           else
             fmt << @width
           end
+          @width = nil
         end
         fmt << DOT << precision if precision
         fmt << type
@@ -187,13 +204,12 @@ END
 
       when ?p
         pad = PAD_SPACE
+        @limit = precision
         expr = "#{arg_expr}.inspect"
-      
       end
 
       unless expr
-        gen_error ArgumentError, "malformed format string - #{m[0]}"
-        return self
+        return gen_error(ArgumentError, "malformed format string - #{m[0]}")
       end
 
       if prefix_expr
@@ -224,9 +240,13 @@ END
         end
       end
 
+      if @limit
+        expr << "[0, #{@limit}]"
+      end
+
       gen_expr expr
     end
-    
+
     gen_lit f
 
     proc_expr
@@ -238,12 +258,17 @@ END
     if @arg_pos
       @arg_pos_used = true
       arg_i = @arg_pos - 1
+      if @arg_rel_used
+        gen_error(ArgumentError, "numbered(#{arg_i + 1}) after unnumbered(#{@arg_i + 1})")
+        return nil
+      end
     else
       @arg_rel_used = true
       arg_i = (@arg_i += 1)
-    end
-    if @arg_rel_used && @arg_pos_used
-      return gen_error ArgumentError, "Cannot use both positional and relative formats in #{@m[0]}" # FIXME
+      if @arg_pos_used
+        gen_error(ArgumentError, "unnumbered(#{arg_i + 1}) mixed with numbered")
+        return nil
+      end
     end
     @arg_i_max = arg_i if @arg_i_max < arg_i
     "args[#{arg_i}]"
@@ -256,7 +281,7 @@ END
 
   def gen_error cls, fmt
     @error_class, @error_msg = cls, fmt
-    nil
+    self
   end
 
   def gen_var expr = 'nil'
@@ -274,7 +299,7 @@ END
   end
 
   def gen_expr expr
-    # peephole optimization for to_s(10).
+    # peephole optimization for Integer#to_s(10).
     expr.sub!(/\.to_s\(10\)$/, '.to_s') 
 
     # peephole optimization for implicit #to_s call during #{...}
@@ -289,7 +314,7 @@ END
 
   def proc
     @proc ||=
-      eval <<"END", __FILE__, __LINE__
+      eval <<"END" # , __FILE__, __LINE__
 lambda do | args |
 #{proc_expr}
 end
@@ -297,11 +322,12 @@ END
   rescue Exception => err
     $stderr.puts "ERROR: #{err} in\n#{proc_expr}"
     gen_error err.class, err.message
-    @proc = lambda { | args | raise @error_class, @error_message }
+    @proc = lambda { | args | raise err.class, err.message }
   end
 
   def proc_expr
-    @proc_expr ||= <<"END"
+    @proc_expr ||= 
+      compile! && <<"END"
   #{arg_check_expr}
   #{@exprs * "\n"}
   "#{@str_template}"
@@ -310,7 +336,11 @@ END
 
   def arg_check_expr
     if @arg_i_max != -1
-      %Q{raise ArgumentError, "too few arguments" if (args = args.to_a).size < #{@arg_i_max + 1}\n}
+      %Q{
+if (args = args.to_a).size < #{@arg_i_max + 1}
+  raise ArgumentError, "too few arguments"
+end
+}
     else
       EMPTY_STRING
     end + 
@@ -322,9 +352,10 @@ END
   end
 
   def define_format_method!
+    compile!
     instance_eval <<"END"
 def self.fmt args
-  # $stderr.puts "\#{self}.fmt \#{args.inspect}\n\#{caller.inspect}"
+  # $stderr.puts "\#{self}.fmt \#{@format.inspect} \#{args.inspect}\n\#{caller.inspect}"
   #{proc_expr}
 end
 alias :% :fmt
@@ -334,95 +365,12 @@ END
 
   def fmt args
     define_format_method!
+    # require 'pp'; pp [ self, args ]
     proc.call(args)
   end
   alias :% :fmt
 
+  self.new("%s").fmt([ 123 ])
 end
 
-
-if $0 == __FILE__
-require 'pp'
-
-def trap_error 
-  [ :ok, yield ]
-rescue Exception => err
-  [ err.class, err.message ]
-end
-
-def check fmt, args
-  $stdout.puts <<"END"
-format:   #{fmt.inspect} % #{args.inspect}
-END
-  
-  sc = nil
-  expected = trap_error do
-    fmt % args
-  end
-  result   = trap_error do
-    sc = SprintfCompiler.new(fmt).compile!.define_format_method!
-    sc % args
-  end
-  
-  if result != expected
-    $stdout.puts <<"END"
-###########################################
-# ERROR:
-format:   #{fmt.inspect} % #{args.inspect}
-expected: #{expected.inspect}
-result:   #{result.inspect}
-
-END
-    pp sc
-  else
-    $stdout.puts <<"END"
-result:   #{result.inspect}
-
-END
-  end
-end
-
-check '', nil
-check 'kjasdkfj', nil
-check '%*d', [ ]
-check '%d', nil
-check '%*d', [ ]
-check '%*d', [ 1 ]
-check '%*d', [ 1, 20 ]
-check '%*d', [ 1, 20, 300 ]
-
-[ '', 
-  [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G', 'p' ].map do | x |
-    [
-     "%#{x}", 
-     "%1$#{x}",
-     "%2$#{x}",
-     "% #{x}",
-     "%0#{x}",
-     "%10#{x}",
-     "%-10#{x}",
-     "% -10#{x}",
-     "%010#{x}",
-     "%0-10#{x}",
-     "%*#{x}",
-     "%-*#{x}", 
-    ]
-  end,
-].flatten.each do | x |
-  fmt = "alks #{x} jdfa"
-  [ 
-   [ ],
-   [ 42 ],
-   [ -42 ],
-   [ 12345678901234567890 ],
-   [ -12345678901234567890 ],
-   [ 20, 42 ], 
-   [ -20, -42 ], 
-   [ 20, 12345678901234567890 ],
-  ].each do | args |
-    check fmt, args
-  end
-end
-
-end
 
