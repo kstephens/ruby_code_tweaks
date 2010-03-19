@@ -1,10 +1,11 @@
 
 class Solution
-  attr_accessor :name, :code, :problem, :index, :before, :example, :notes
+  attr_accessor :name, :code, :problem, :index, :before, :example, :notes, :generative
 
   def initialize name, code
     @name, @code = name, code
     @before = ''
+    @generative = false
   end
 
   def code_block

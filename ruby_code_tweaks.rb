@@ -21,7 +21,7 @@ Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
 #Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
 Platform.new("JRuby-1.4", "~/local/jruby-1.4.0/bin/jruby", '--fast')
 Platform.new("Rubinius-ks", "~/local/rubinius/kstephens/bin/rbx")
-Platform.new("Rubinius", "~/local/rubinius/trunk/bin/rbx")
+Platform.new("Rubinius", "~/local/rubinius/master/bin/rbx")
 
 ########################################################
 # Begin problems.
@@ -106,6 +106,56 @@ END
 
 ############################################################
 
+p = Problem.new(:first_element)
+p.description = 'Get first element of Array.'
+p.n = [ 10_000_000 ]
+p.around = <<END
+  array = [ :thing ]
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "array[0]", <<'END'
+  array[0]
+END
+
+s = p.solution "array.first", <<'END'
+  array.first
+END
+
+p.synopsis = <<'END'
+* array[0] is optimized on some platforms.
+END
+
+############################################################
+
+p = Problem.new(:last_element)
+p.description = 'Get last element of Array.'
+p.n = [ 10_000_000 ]
+p.around = <<END
+  array = [ :thing ]
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "array[-1]", <<'END'
+  array[-1]
+END
+
+s = p.solution "array.last", <<'END'
+  array.last
+END
+
+p.synopsis = <<'END'
+* array[-1] is optimized on some platforms.
+END
+
+############################################################
+
 p = Problem.new(:string_formatting)
 p.description = 'Format a String'
 p.n = [ 1_000_000 ]
@@ -127,17 +177,73 @@ s = p.solution "String interpolation", <<'END'
   "#{foobar}, #{n}"
 END
 
-s = p.solution "SprintfCompiler", <<'END'
-  SprintfCompiler.format("%s, %d", [ foobar, n ])
+s = p.solution "SprintfCompiler cached", <<'END'
+  SprintfCompiler.fmt("%s, %d", [ foobar, n ])
+END
+s.notes = <<END
+* SprintfCompiler generates a Ruby expression for an sprintf format String.
+* "":http://github.com/kstephens/ruby_code_tweaks/blob/master/sprintf_compiler.rb
 END
 s.before = <<'END'
 require 'sprintf_compiler'
 END
 
 p.synopsis = <<'END'
-* String interpolation is faster.
-* Rubinius String#% is slow.
-* SprintfCompiler speeds up Rubinius for common formats.
+* String interpolation is faster for formats without options.
+* Rubinius::Sprintf is slow.
+** Make it ~2x faster:
+*** "":http://github.com/kstephens/rubinius/blob/master-sprintf/kernel/common/sprintf.rb 
+*** Reduce String garbage using CONSTANTS.
+*** Use instance variables instead of temporary Hash.
+*** Cache computational objects.
+* SprintfCompiler:
+** speeds up Rubinius for cached formats.
+** is ~2.5x slower than MRI sprintf().
+** Native JRuby String#% is faster.
+END
+
+
+############################################################
+
+p = Problem.new(:sprintf_compiler)
+p.description = 'Format a String using SprintfCompiler'
+p.n = [ 10000 ]
+p.setup = <<'END'
+  foobar = "foobar"
+END
+p.around = <<END
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "String#%", <<'END'
+  "%s, %d" % [ foobar, n ]
+END
+
+s = p.solution "SprintfCompiler", <<'END'
+  SprintfCompiler.new("%s, %d").fmt([ foobar, n ])
+END
+require 'sprintf_compiler'
+s.notes = <<"END"
+@@@ ruby
+  SprintfCompiler.new("%s, %d").proc_expr =>
+  %q{
+    lambda do | args |
+      #{SprintfCompiler.new("%s, %d").proc_expr}
+    end
+  }
+@@@
+END
+
+s.before = <<'END'
+require 'sprintf_compiler'
+END
+
+p.synopsis = <<'END'
+* SprintfCompiler is ~100x slower than the C MRI sprintf().
+* SprintfCompiler is ~200x slower than the stock Rubinius::Sprintf().
 END
 
 ############################################################
@@ -193,8 +299,11 @@ s = p.solution "Local variable", <<END
 END
 
 p.synopsis = <<'END'
-* Use a local variable, #inject is slower.
-* Rubinius appears to have a problem.
+* Array#inject is slower than using a local variable.
+* Use a local variable
+** If the result is going to be stored in a local variable anyway.
+** A local variable is less confusing and error-prone.
+* Rubinius: local variables are a bit more costly than expected.
 END
 
 ############################################################
@@ -248,8 +357,8 @@ END
 
 p.synopsis = <<'END'
 * Use str << x
-* str += x creates pointless garbage.
-* Some platforms handle garbage and assignments poorly.
+* str += x creates pointless garbage; DONT USE IT!
+* Some platforms handle garbage and assignments differently.
 * Use array.concat x, instead of array += x.
 END
 
@@ -260,6 +369,8 @@ p = Problem.new(:array_include_short)
 p.description = 'Is a value in a short, constant set?'
 p.n= [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
 p.example = <<'END'
+  # n = 2
+
   x == 0 || x == 1
 
   [ 0, 1 ].include?(x)
@@ -268,6 +379,8 @@ p.example = <<'END'
   when 0, 1
     true
   end
+
+  # ETC... TIMTOWTI!
 END
 p.inline = true
 p.setup= <<END
@@ -382,45 +495,11 @@ def hash_key? x
 end
 END
 
-s = p.solution "hash[x]", <<END
-  hash_get
-END
-s.example = <<'END'
-  HASH = { 0 => true, 1 => true }.freeze
-  ...
-  HASH[x]
-END
-s.before = <<'END'
-@hash = { }
-@array.each{|x| @hash[x] = true}
-def hash_get x
-  @hash[x]
-end
-END
-
-s = p.solution "set.include?(x)", <<END
-  set_include?
-END
-s.example = <<'END'
-require 'set'
-SET = Set.new([ 0, 1 ])   # n == 2
-...
-SET.include? x
-END
-s.before = <<'END'
-require 'set'
-@set = Set.new(@array)
-def set_include? x
-  @set.include? x
-end
-END
-
 p.synopsis = <<'END'
 * Beware: case uses #===, not #==.
 * Use x == y when n == 1.
 * Use hash.key?(x) when n > 1.
-* x == y1 && ... is faster than [ ... ].include?(x) up until n == 10.
-* Ruby Set is slower than Hash.
+* x == y1 && ... is faster than [ ... ].include?(x) when n < ~10.
 END
 
 ############################################################
@@ -451,24 +530,131 @@ s = p.solution "case x; when *array", <<END
   end
 END
 
-s = p.solution "! (array & [ x ]).empty?", <<END
-  ! (array & [ x ]).empty?
+s = p.solution "hash.key?(x)", <<END
+  hash.key?(x)
+END
+s.before = <<'END'
+  hash = { }
+  array.each { | x | hash[x] = true }
+END
+ 
+p.synopsis = <<'END'
+* Use a Hash.
+* Beware: case uses === operator.
+* Rubinius Array#% is slow.
+END
+
+############################################################
+
+p = Problem.new(:value_in_set)
+p.description = 'Is a value in a constant set?'
+p.n= [ 1, 10, 20, 50, 100, 200, 500, 1000 ]
+p.example = <<'END'
+  # n = 2 
+  array = [ :foo, :bar ] 
+  hash  = { :foo => true, :bar => true }
+  set   = Set.new([ :foo, :bar ])
+  ...
+  array.include?(x)
+  hash.key?(x)
+  set.include?(x)
+  ! (array & [ x ]).empty?     # <== WTF?
+END
+p.inline = true
+p.setup= <<END
+  array = (0 ... n).to_a.sort_by{|x| rand}
+  try   = (0 ... 1000).to_a.map{|x| rand(n + n)}.sort_by{|x| rand}
+END
+p.around= <<'END'
+  1000.times do
+    try.each do | x |
+      __SOLUTION__
+    end
+  end
+END
+
+s = p.solution "array.include?(x)", <<END
+  array.include? x
 END
 
 s = p.solution "hash.key?(x)", <<END
   hash.key?(x)
 END
 s.before = <<'END'
-  hash = { }; array.each { | x | hash[x] = true }
-END
- 
-p.synopsis = <<'END'
-* Set performs poorly on Rubinius.
-* Set performs "too well" on everything else.
-* Use a Hash.
+  hash = { }
+  array.each{|x| hash[x] = true}
 END
 
+s = p.solution "hash[x]", <<END
+  hash[x]
+END
+s.before = <<'END'
+  hash = { }
+  array.each{|x| hash[x] = true}
+END
+
+s = p.solution "set.include?(x)", <<END
+  set.include?(x)
+END
+s.before = <<'END'
+  require 'set'
+  set = Set.new(array)
+END
+
+s = p.solution "! (array & [ x ]).empty?", <<END
+  ! (array & [ x ]).empty?
+END
+
+
+p.synopsis = <<'END'
+* Ruby Set is slower than Hash.
+* ! (Array & [ x ]).empty performs "too well". (!!!)
+* Set poorly on Rubinius.
+* Array is slower than Hash.
+* In general, use Hash#key?
+END
+
+
 ############################################################
+
+p = Problem.new(:dynamic_expression)
+p.description = 'Evaluate a dynamic expression'
+p.n= [ 1000 ]
+p.example = <<'END'
+  x = 10
+  expr = "x * 2"
+  eval(expr, binding)
+END
+p.inline = true
+p.setup = <<'END'
+  exprs = (0 ... 100).to_a.sort_by{|y| rand}.map{|y| "x * #{y}"}
+  x = 10
+END
+p.around = <<'END'
+  n.times do 
+    exprs.each do | expr |
+      __SOLUTION__
+    end
+  end
+END
+
+s = p.solution 'eval', <<'END'
+  eval(expr, binding)
+END
+
+s = p.solution 'cached lambda', <<'END'
+  p = lambdas[expr] ||= eval(%Q{lambda{|x| #{expr}}})
+  p.call(x)
+END
+s.before = <<'END'
+  lambdas = { }
+END
+
+p.synopsis = <<'END'
+* Create lambdas and cache them.
+* Avoid relying on binding.
+* Rubinius eval() is expensive.
+END
 
 ############################################################
 
@@ -487,9 +673,12 @@ if ENV['SLIDES'] == '1'
   slides_textile = 'slides.textile'
   erb = ERB.new(File.read(erb_file = "#{slides_textile}.erb"))
   erb.filename = erb_file
-  File.open(slides_textile, "w+") { | out | out.puts erb.result(binding) }
+  textile = erb.result(binding)
+  textile.gsub!(/"":relative:([^\s]+)/){|x| %Q{<a href="#{$1}">#{$1}</a>}}
+  textile.gsub!(/"":(https?:[^\s]+)/){|x| %Q{"#{$1}":#{$1}}}
+  File.open(slides_textile, "w+") { | out | out.puts textile }
   $stderr.puts "Created #{slides_textile}"
-  SCARLET = (ENV['SCARLET'] ||= File.expand_path("~/local/src/scarlet/bin/scarlet"))
+  SCARLET = (ENV['SCARLET'] ||= File.expand_path("../scarlet/bin/scarlet"))
   # system "#{SCARLET} -g slides -f html slides.textile"
   system "set -x; #{SCARLET} -f html slides.textile > slides/index.html"
   system "set -x; cp -p image/*.* slides/image"

@@ -118,7 +118,7 @@ end
 
 h1. Problem: <%= prob.name %>
 
-h1. Solution <%= sol.index %>: <%= sol.name %>
+h1. Solution <%= sol.index %>: @<%= sol.name %>@
 
 @@@ ruby
 <%= prob.setup %>
@@ -137,12 +137,12 @@ h1. Solution <%= sol.index %>: <%= sol.name %>
 h1. Results
 
 * n = <%= prob.n * ', ' %>
-* Test script: <a href="<%= code_rb %>"><%= code_rb %></a>
-* Test output: <a href="<%= out_txt %>"><%= out_txt %></a>
+* Test script: "":relative:<%= code_rb %>
+* Test output: "":relative:<%= out_txt %>
 * Measurements by platform:
 <% prob.platforms.each do | plat |
      measurement_rb = "measurement/#{prob.name}-#{plat.name}.rb" %>
-** <%= plat.name %>: <a href="<%= measurement_rb %>"><%= measurement_rb %></a>
+** <%= plat.name %>: "":relative:<%= measurement_rb %>
 <% end %>
 
 <% prob.platforms.each do | plat | %>

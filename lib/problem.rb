@@ -52,6 +52,44 @@ class Problem
     Platform.instances
   end
 
+  def render_prob fh, bm = false
+    prob = self
+    fh.puts "Benchmark.bm(40) do | bm |" if bm
+    prob.n.each do | n |
+      fh.puts "n = #{n}"
+      fh.puts '  $stderr.write n' unless bm
+      fh.puts prob.setup
+      prob.solutions.each do | sol |
+        fh.puts "  $solution = #{sol.name.inspect}"
+
+        fh.puts sol.before
+
+        fh.puts "  ObjectSpace.garbage_collect"
+        if bm
+          fh.puts "  bmr = bm.report('n = #{'%7d' % n} : ' + #{sol.name.to_s.inspect}) do"
+        else
+          fh.puts '  $stderr.write "."'
+        end
+
+        fh.puts sol.code_block
+
+        if bm
+          fh.puts '  end' 
+          fh.puts <<"END"
+  $rfh.puts({ :platform => $platform, 
+              :problem => #{prob.name.inspect}, 
+              :solution => $solution, 
+              :n => n,
+              :time => bmr.real,
+             }.inspect + ', ')
+   $rfh.flush
+END
+        end
+      end
+    end
+    fh.puts "end" if bm
+    self
+  end
 
   def collect_measurements!
     prob = self
@@ -115,6 +153,7 @@ class Problem
     max_value = measurements.map{|h| h[:time] || 0}.max
 
     platforms.each do | plat |
+    begin
       image_file = "slides/image/#{prob.name}-#{plat.name}.png"
       $stderr.write "Creating #{image_file}..."
       errors = false
@@ -145,9 +184,13 @@ class Problem
       g.labels = labels
       g.write(image_file)
       $stderr.puts "DONE"
+    rescue Exception => err
+      $stderr.puts "ERROR: #{err.inspect}\n#{err.backtrace * "\n"}"
+    end
     end
 
     solutions.each do | sol |
+    begin
       image_file = "slides/image/#{prob.name}-sol#{sol.index}.png"
       $stderr.write "Creating #{image_file}..."
 
@@ -179,6 +222,9 @@ class Problem
       g.labels = labels
       g.write(image_file)
       $stderr.puts "DONE"
+    rescue Exception => err
+      $stderr.puts "ERROR: #{err.inspect}\n#{err.backtrace * "\n"}"
+    end
     end
 
     self
