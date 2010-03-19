@@ -21,7 +21,7 @@ Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
 #Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
 Platform.new("JRuby-1.4", "~/local/jruby-1.4.0/bin/jruby", '--fast')
 Platform.new("Rubinius-ks", "~/local/rubinius/kstephens/bin/rbx")
-Platform.new("Rubinius", "~/local/rubinius/master/bin/rbx")
+#Platform.new("Rubinius", "~/local/rubinius/master/bin/rbx")
 
 ########################################################
 # Begin problems.
@@ -156,8 +156,37 @@ END
 
 ############################################################
 
+p = Problem.new(:string_build)
+p.description = 'Build a String from parts.'
+p.n = [ 5_000_000 ]
+p.setup = <<'END'
+  foo = "foo"
+  bar = 42
+END
+p.around = <<END
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "String#+", <<'END'
+  "abc" + foo + "123" + bar.to_s
+END
+
+s = p.solution "String Interpolation", <<'END'
+  "abc#{foo}123#{bar}"
+END
+
+p.synopsis = <<'END'
+* MRI 1.8.7+ Strings are slower than 1.8.6.
+* Use String interpolation.
+END
+
+############################################################
+
 p = Problem.new(:string_formatting)
-p.description = 'Format a String'
+p.description = 'Output a String and Integer in a simple format'
 p.n = [ 1_000_000 ]
 p.setup = <<'END'
   foobar = "foobar"
@@ -231,7 +260,7 @@ s.notes = <<"END"
   SprintfCompiler.new("%s, %d").proc_expr =>
   %q{
     lambda do | args |
-      #{SprintfCompiler.new("%s, %d").proc_expr}
+      #{SprintfCompiler.new("%s, %d").proc_expr.gsub(/\n(\s*\n)+/, "\n")}
     end
   }
 @@@
@@ -262,7 +291,7 @@ END
 p.inline = true
 
 s = p.solution "String#to_sym", <<'END'
-  (foobar + "123").to_sym
+  "#{foobar}123".to_sym
 END
 
 s = p.solution "Dynamic Symbol", <<'END'
@@ -277,7 +306,7 @@ END
 
 p = Problem.new(:inject)
 p.description = 'Enumerate elements while using a temporary or block variable.'
-p.n = [ 1, 10, 20, 50, 100, 200 ]
+p.n = [ 1, 10, 20, 50, 100] # , 200 ]
 p.setup = <<END
   array = (0 ... n).to_a.sort_by{|x| rand}
 END
@@ -313,7 +342,7 @@ p.description = <<'END'
 Accumulate String parts of size N into one larger String.
 END
 # p.enabled = false
-p.n = [ 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 ]
+p.n = [ 1, 2, 5, 10, 20, 50, 100 ] # , 200, 500, 1000 ]
 p.setup= <<'END'
   parts = (0 ... 100).to_a.map{"a" * n}
 END
@@ -348,12 +377,6 @@ END
 s.notes = <<'END'
 END
 
-s = p.solution "parts.join", <<END
-  str << parts.join("")
-END
-s.notes = <<'END'
-END
-
 
 p.synopsis = <<'END'
 * Use str << x
@@ -362,6 +385,44 @@ p.synopsis = <<'END'
 * Use array.concat x, instead of array += x.
 END
 
+############################################################
+
+p = Problem.new(:string_join)
+p.description = <<'END'
+Accumulate String parts of size N into one larger String.
+END
+# p.enabled = false
+p.n = [ 1, 2, 5, 10, 20, 50, 100, 200, 500 ] # , 1000 ]
+p.setup= <<'END'
+  parts = (0 ... 100).to_a.map{"a" * n}
+END
+p.around= <<END
+  str = ''
+  10000.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+s = p.solution "str << x", <<'END'
+  parts.each do | x |
+    str << x
+  end
+END
+s.notes = <<'END'
+END
+
+s = p.solution "parts.join", <<END
+  str << parts.join("")
+END
+s.notes = <<'END'
+END
+
+p.synopsis = <<'END'
+* String to be joined are not protected from side-effects.
+* Use String#<<, if avg. string size < 100.
+* Rubinius handles String#<< better when string size < 500.
+END
 
 ############################################################
 
@@ -496,8 +557,8 @@ end
 END
 
 p.synopsis = <<'END'
-* Beware: case uses #===, not #==.
-* Use x == y when n == 1.
+* Beware: case uses @===@, not @==@.
+* Use @x == y@ when n == 1.
 * Use hash.key?(x) when n > 1.
 * x == y1 && ... is faster than [ ... ].include?(x) when n < ~10.
 END
@@ -505,7 +566,7 @@ END
 ############################################################
 
 p = Problem.new(:array_include)
-p.n= [ 1, 10, 20, 50, 100, 200, 500, 1000 ]
+p.n= [ 1, 10, 20, 50, 100, 200, 500 ] # , 1000 ]
 p.setup= <<END
   array = (0 ... n).to_a.sort_by{|x| rand}
   try   = (0 ... 2000).to_a.sort_by{|x| rand}
@@ -541,14 +602,14 @@ END
 p.synopsis = <<'END'
 * Use a Hash.
 * Beware: case uses === operator.
-* Rubinius Array#% is slow.
+* MRI 1.8.7+ Array#include? is slower than MRI 1.8.6.
 END
 
 ############################################################
 
 p = Problem.new(:value_in_set)
 p.description = 'Is a value in a constant set?'
-p.n= [ 1, 10, 20, 50, 100, 200, 500, 1000 ]
+p.n= [ 1, 10, 20, 50, 100, 200 ] # , 500, 1000 ]
 p.example = <<'END'
   # n = 2 
   array = [ :foo, :bar ] 
@@ -585,14 +646,6 @@ s.before = <<'END'
   array.each{|x| hash[x] = true}
 END
 
-s = p.solution "hash[x]", <<END
-  hash[x]
-END
-s.before = <<'END'
-  hash = { }
-  array.each{|x| hash[x] = true}
-END
-
 s = p.solution "set.include?(x)", <<END
   set.include?(x)
 END
@@ -601,15 +654,15 @@ s.before = <<'END'
   set = Set.new(array)
 END
 
-s = p.solution "! (array & [ x ]).empty?", <<END
+s = p.solution "!(array&[x]).empty?", <<END
   ! (array & [ x ]).empty?
 END
 
 
 p.synopsis = <<'END'
 * Ruby Set is slower than Hash.
-* ! (Array & [ x ]).empty performs "too well". (!!!)
-* Set poorly on Rubinius.
+* @!(Array&[x]).empty?@ performs "too well". (!!!)
+* Set performs poorly on Rubinius.
 * Array is slower than Hash.
 * In general, use Hash#key?
 END

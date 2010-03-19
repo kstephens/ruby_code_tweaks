@@ -1,3 +1,4 @@
+require 'digest/md5'
 
 class Solution
   attr_accessor :name, :code, :problem, :index, :before, :example, :notes, :generative
@@ -6,6 +7,11 @@ class Solution
     @name, @code = name, code
     @before = ''
     @generative = false
+  end
+
+  def id
+    @id ||=
+      Digest::MD5.new.hexdigest(@name)
   end
 
   def code_block

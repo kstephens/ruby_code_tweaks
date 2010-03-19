@@ -75,19 +75,17 @@ h2. The best performing idiom might:
 h1. Thoughts
 
 h2. These Benchmarks:
-* are very low-level, narrow and specific.
+* very low-level, narrow and specific.
 * will not extrapolate to represent your application's overall performance.
-* are not comprehensive or real-world comparisons of different Ruby platforms.
-* may be due to misconfiguration - run these tests yourself.
+* not comprehensive or real-world comparisons of different Ruby platforms.
+* may be due to misconfiguration.
 
 h2. Stuff gets better:
-* Ruby platforms get better.
-* These benchmark results could change tomorrow.
-* Contribute to the community.
+* Ruby platforms get better - benchmark results could change tomorrow.
+* Contribute.
 
 h2. Do your own research
-* Dis-spell your own myths.
-* See what works for you.
+* Dis-spell your own myths - see what works for you.
 * Fix code before blaming Ruby - clean, profiled code works best everywhere.
 * Measure, then measure again.
 
@@ -112,13 +110,18 @@ end
 @@@
 <%= prob.notes %>
 
+h2. Solutions
+<% prob.solutions.each do | sol | %>
+* @<%= sol.name %>@
+<% end %>
+
 <% prob.solutions.each do | sol | %>
 
 !SLIDE
 
-h1. Problem: <%= prob.name %>
+h1. <%= prob.name %>
 
-h1. Solution <%= sol.index %>: @<%= sol.name %>@
+h2. @<%= sol.name %>@
 
 @@@ ruby
 <%= prob.setup %>
@@ -131,47 +134,40 @@ h1. Solution <%= sol.index %>: @<%= sol.name %>@
 
 !SLIDE
 
-<% code_rb = "problem/#{prob.name}.rb" %>
-<% out_txt = "measurement/#{prob.name}.txt" %>
-
 h1. Results
 
 * n = <%= prob.n * ', ' %>
-* Test script: "":relative:<%= code_rb %>
-* Test output: "":relative:<%= out_txt %>
-* Measurements by platform:
-<% prob.platforms.each do | plat |
-     measurement_rb = "measurement/#{prob.name}-#{plat.name}.rb" %>
-** <%= plat.name %>: "":relative:<%= measurement_rb %>
+* Test script: "":relative:<%= prob.problem_file %>
+* Test output: "":relative:<%= prob.output_file %>
+* Measurements by platform: <% prob.platforms.each do | plat | %>
+** <%= plat.name %>: "":relative:<%= prob.measurement_file(plat) %>
 <% end %>
 
+<% if false %>
 <% prob.platforms.each do | plat | %>
 !SLIDE
 
-!image/<%= prob.name %>-<%= plat.name %>.png!
+!<%= prob.graph_image(plat) %>!
 
+<% end %>
 <% end %>
 
 <% prob.solutions.each do | sol | %>
 !SLIDE
 
-!image/<%= prob.name %>-sol<%= sol.index %>.png!
+!<%= prob.graph_image(sol) %>!
 
 <% end %>
 
 <% if prob.synopsis %>
 !SLIDE
 
-h1. Problem: <%= prob.name %>
+h1. Summary: <%= prob.name %>
 
 <%= prob.synopsis %>
 <% end %>
 
 <% end %>
-
-!SLIDE
-
-h1. But wait there's more.
 
 !SLIDE
 
