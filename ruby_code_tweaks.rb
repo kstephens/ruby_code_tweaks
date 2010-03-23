@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
-$: << File.dirname(__FILE__) + "/lib"
+$:.unshift File.dirname(__FILE__) + "/lib"
+$:.unshift '../ruby_sprintf_compiler/lib'
 
 require 'problem'
 require 'solution'
@@ -188,6 +189,9 @@ END
 p = Problem.new(:string_formatting)
 p.description = 'Output a String and Integer in a simple format'
 p.n = [ 1_000_000 ]
+p.init = <<'END'
+$:.unshift '../ruby_sprintf_compiler/lib'
+END
 p.setup = <<'END'
   foobar = "foobar"
 END
@@ -236,6 +240,9 @@ END
 ############################################################
 
 p = Problem.new(:sprintf_compiler)
+p.init = <<'END'
+$:.unshift '../ruby_sprintf_compiler/lib'
+END
 p.description = 'Format a String using SprintfCompiler'
 p.n = [ 10000 ]
 p.setup = <<'END'

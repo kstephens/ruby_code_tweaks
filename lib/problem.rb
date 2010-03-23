@@ -8,7 +8,7 @@ class Problem
     @@instances
   end
 
-  attr_accessor :name, :description, :example, :n, :setup, :around, :enabled
+  attr_accessor :name, :description, :example, :n, :init, :setup, :around, :enabled
   attr_accessor :inline
   attr_accessor :solutions, :measurements
   attr_accessor :synopsis, :notes
@@ -18,6 +18,7 @@ class Problem
     @n = [ 100000 ]
     @measurements = [ ]
     @solutions = [ ]
+    @init = ''
     @setup = ''
     @around = '__SOLUTION__'
     @enabled = (ENV['ENABLED'] || 1).to_i != 0
@@ -128,8 +129,13 @@ end
 END
 
       wrap_rescue fh do
+
       fh.puts <<"END"
   Kernel.srand(#{@@srand})
+END
+
+      fh.puts <<"END"
+  #{prob.init}
 END
 
       if ENV['WARMUP'] != '0'
@@ -143,11 +149,13 @@ END
       render_prob fh, :benchmark
 
       fh.puts <<"END"
-
 $stderr.puts "\nFINISHED!"
-exit($error ? 1 : 0)
 END
       end
+
+      fh.puts <<"END"
+exit($error ? 1 : 0)
+END
 
       fh.flush
     end
