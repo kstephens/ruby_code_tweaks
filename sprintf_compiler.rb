@@ -51,6 +51,7 @@ class SprintfCompiler
   PAD_DOTDOT   = "::#{self.name}::DOTDOT".freeze
 
   DEFAULT_F_PREC = '6'.freeze
+  DEFAULT_G_PREC = '4'.freeze
 
   CHAR_TABLE = [ ]
   (0 .. 255).each { | i | CHAR_TABLE[i] = i.chr.freeze }
@@ -213,15 +214,21 @@ END
         end
 
       when ?f, ?e, ?E, ?g, ?G
-        if typec == ?e || typec == ?E
+        case typec
+        when ?g, ?G
+          @precision ||= DEFAULT_F_PREC
+          type = F_LC if @flags_alternate
+        when ?e, ?E
           # @precision = nil
         else
           @precision ||= DEFAULT_F_PREC
         end
+
         fmt = "%"
         fmt << SPACE if @flags_space
         fmt << MINUS if @flags_minus
         fmt << ZERO  if @flags_zero
+        fmt << HASH  if @flags_alternative
         if @width
           # Width is dynamic.
           if @width_star
