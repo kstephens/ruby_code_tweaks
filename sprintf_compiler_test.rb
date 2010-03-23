@@ -2,8 +2,10 @@ require 'sprintf_compiler'
 require 'pp'
 
 def trap_error 
+  $error = nil
   [ :ok, yield ]
 rescue Exception => err
+  $error = err
   [ err.class, err.message ]
 end
 
@@ -23,6 +25,15 @@ END
     sc % args
   end
 
+  if opts[:any_error] || ENV['ANY_ERR']
+    [ result, expected ].each do | a |
+      if Class === a[0] && Class === result[0] && Class === expected[0]
+        a[0] = AnyException
+        a[1] = :any_msg
+      end
+    end
+  end
+
   if opts[:ignore_error] || ENV['IGNORE_ERR']
     [ result, expected ].each do | a |
       if Class === a[0]
@@ -30,6 +41,7 @@ END
       end
     end
   end
+
   if opts[:ignore_message] || ENV['IGNORE_MSG']
     [ result, expected ].each do | a |
       if Class === a[0]
@@ -45,7 +57,7 @@ END
 format:   #{fmt.inspect} % #{args.inspect}
 expected: #{expected.inspect}
 result:   #{result.inspect}
-
+error:    #{$error.inspect}\n  #{$error && $error.backtrace * "\n  "}
 END
     pp sc
   else
@@ -82,9 +94,10 @@ check "%d", [ true ]
 end
 
 [ '', 
-  [ '%', 's', 'c', 'd', 'x', 'b', 'X', 'f', 'e', 'g', 'E', 'G', 'p' ].map do | x |
+  [ '%', 's', 'c', 'd', 'b', 'o', 'x', 'X', 'f', 'e', 'g', 'E', 'G', 'p' ].map do | x |
     [
      "%#{x}", 
+     "%\##{x}", 
      "%1$#{x}",
      "%2$#{x}",
      "% #{x}",

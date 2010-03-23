@@ -25,19 +25,30 @@ class SprintfCompiler
   RADIXES = {?b => 2, ?o => 8, ?d => 10, ?i => 10, ?x => 16}
   RADIXES.dup.each { | k, v | RADIXES[k.chr.upcase[0]] = v }
   RADIXES.freeze
-  ALTERNATIVES = {"o" => "0", "b" => "0b", "B" => "0B", "x" => "0x", "X" => "0X"}
+  RADIX_MAX_CHAR = { }
+  RADIXES.each do | k, r |
+    RADIX_MAX_CHAR[r] = (r - 1).to_s(r).freeze
+  end
+  RADIX_MAX_CHAR.freeze
+
+  ALTERNATIVES = {?o => "0", ?b => "0b", ?B => "0B", ?x => "0x", ?X => "0X"}
 
   EMPTY_STRING = ''.freeze
   SPACE        = ' '.freeze
+  HASH         = '#'.freeze
   ZERO         = '0'.freeze
   MINUS        = '-'.freeze
   STAR         = '*'.freeze
   PERCENT      = '%'.freeze
   DOT          = '.'.freeze
+  DOTDOT       = '..'.freeze
   DQUOTE       = '"'.freeze
+
+  F_LC         = 'f'.freeze
 
   PAD_SPACE    = "::#{self.name}::SPACE".freeze
   PAD_ZERO     = "::#{self.name}::ZERO".freeze
+  PAD_DOTDOT   = "::#{self.name}::DOTDOT".freeze
 
   DEFAULT_F_PREC = '6'.freeze
 
@@ -60,44 +71,45 @@ class SprintfCompiler
 
     f = @format
 
-    #           %flags       arg_pos       width        prec     type
-    #           1            2             3            4        5
-    while m = /%([-+0 ]+)?(?:([1-9])\$)?(?:(\d+|\*+)(?:\.(\d+))?)?([scdiboxXfegEGp%])/.match(f)
+    #           %flags        arg_pos       width        prec     type
+    #           1             2             3            4        5
+    while m = /%([-+0# ]+)?(?:([1-9])\$)?(?:(\d+|\*+)(?:\.(\d+))?)?([scdiboxXfegEGp%])/.match(f)
       @m = m
       # $stderr.puts "m = #{m.to_a.inspect}"
       prefix_expr = nil
 
-      gen_lit m.pre_match
+      gen_str_lit m.pre_match
       f = m.post_match
 
       flags = m[1] || EMPTY_STRING
       @flags_zero  = flags.include?(ZERO)
       @flags_minus = flags.include?(MINUS)
       @flags_space = flags.include?(SPACE)
+      @flags_alternative = flags.include?(HASH)
       @arg_pos = m[2]
       @arg_pos &&= @arg_pos.to_i
       @width = m[3]
       @width_star = @width && @width.count(STAR)
       @width_star = nil if @width_star && @width_star < 1
 
-      precision = m[4]
+      @precision = m[4]
       @limit = nil
       typec = (type = m[5])[0]
 
       if typec == ?%
         if @arg_pos || @width_star # "%$1%" or "%*%"
-          get_arg 
+          gen_arg 
         end
         if @width || @flags_space || @flags_zero
           return gen_error(ArgumentError, "illegal format character - #{type}")
         end
-        gen_lit(PERCENT)
+        gen_str_lit(PERCENT)
         next
       end
 
       # Get the width argument.
       if @width_star
-        @width = get_arg 
+        @width = gen_arg 
       end
       break if @error_class
 
@@ -107,7 +119,7 @@ class SprintfCompiler
       end
 
       # Get the value argument.
-      arg_expr = get_arg
+      arg_expr = gen_arg
       break if @error_class
 
       direction = @flags_minus ? :ljust : :rjust
@@ -118,22 +130,24 @@ class SprintfCompiler
       case typec
       when ?s
         pad = PAD_SPACE
-        @limit = precision
+        @limit = @precision
         expr = "#{arg_expr}.to_s"
 
       when ?c
         pad = PAD_SPACE
-        var = gen_var arg_expr
-        gen_var_expr "#{var} = #{var}.to_int if #{var}.respond_to?(:to_int)"
-        expr = "::#{self.class.name}::CHAR_TABLE[#{var} % 256]"
+        arg_expr = gen_var arg_expr
+        gen_expr "#{arg_expr} = #{arg_expr}.to_int if #{arg_expr}.respond_to?(:to_int)"
+        gen_expr %Q{raise RangeError, "bignum too big to convert into \`long'" unless Fixnum === #{arg_expr}}
+        expr = "::#{self.class.name}::CHAR_TABLE[#{arg_expr} % 256]"
         @debug = true
 
       when ?d, ?i
+        arg_expr = gen_integer arg_expr
         if @flags_space
           arg_expr = gen_var arg_expr
-          expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+          expr = "#{arg_expr}.to_s"
           str_var = gen_var expr
-          gen_var_expr <<"END"
+          gen_expr <<"END"
   if #{arg_expr} >= 0
     #{str_var} = ' ' + #{str_var}
   end
@@ -145,7 +159,7 @@ END
           @width  = gen_var @width
           arg_expr = gen_var arg_expr
           prefix_expr = gen_var "::#{self.class.name}::EMPTY_STRING"
-          gen_var_expr <<"END"
+          gen_expr <<"END"
   if #{arg_expr} < 0
     #{arg_expr}    = - #{arg_expr}
     #{@width}      = #{@width} - 1
@@ -153,20 +167,56 @@ END
   end
 END
         end
-        expr ||= "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+        expr ||= "#{arg_expr}.to_s"
 
       when ?b, ?o, ?x, ?X
+        radix = RADIXES[typec] or raise ArgumentError
+        radix_char = "::#{self.class.name}::RADIX_MAX_CHAR[#{radix}]"
+        radix_char << '.upcase' if typec == ?X
+        arg_expr = gen_integer arg_expr
         direction = :rjust if @flags_zero
-        expr = "#{arg_expr}.to_i.to_s(#{RADIXES[typec]})"
+        # pad = PAD_SPACE unless @flags_zero
+        if ! (@flags_space || @flags_plus)
+          pad_digit = gen_var "#{arg_expr} < 0 ? #{radix_char} : #{PAD_ZERO}"
+          if @flags_zero
+            pad = pad_digit
+            pad_digit = gen_var radix_char
+          end
+          str_expr = gen_var "#{arg_expr}.to_s(#{radix})"
+          gen_expr <<"END"
+if #{arg_expr} < 0
+  #{arg_expr}_len = #{str_expr}.size
+  #{arg_expr}_max = (#{pad_digit} * #{arg_expr}_len).to_i(#{radix})
+  #{str_expr} = (#{arg_expr}_max + #{arg_expr} + 1).to_s(#{radix})
+  #{str_expr}.slice!(0, 1) if #{str_expr}[0] == #{pad_digit}[0] && #{str_expr}[1] == #{pad_digit}[0]
+  #{str_expr}.insert(0, #{PAD_DOTDOT}) unless #{@flags_zero.inspect}
+end
+END
+          expr = str_expr
+        elsif @flags_space 
+          arg_expr = gen_var arg_expr
+          expr = "#{arg_expr}.to_s(#{radix})"
+          expr = gen_var expr
+          gen_expr <<"END"
+if #{arg_expr} >= 0
+  #{expr}.insert(0, #{PAD_SPACE})
+end
+END
+        else
+          expr = "#{arg_expr}.to_s(#{radix})"
+        end
+        if @flags_alternative && (alt = ALTERNATIVES[typec])
+          gen_str_lit alt
+        end
         if typec == ?X
           expr << '.upcase'
         end
 
       when ?f, ?e, ?E, ?g, ?G
         if typec == ?e || typec == ?E
-          # precision = nil
+          # @precision = nil
         else
-          precision ||= DEFAULT_F_PREC
+          @precision ||= DEFAULT_F_PREC
         end
         fmt = "%"
         fmt << SPACE if @flags_space
@@ -182,7 +232,8 @@ END
           end
           @width = nil
         end
-        fmt << DOT << precision if precision
+        fmt << DOT << @precision if @precision
+        #fmt << (typec == ?g ? F_LC : type)
         fmt << type
 
         # Width is dynamic.
@@ -204,7 +255,7 @@ END
 
       when ?p
         pad = PAD_SPACE
-        @limit = precision
+        @limit = @precision
         expr = "#{arg_expr}.inspect"
       end
 
@@ -213,7 +264,7 @@ END
       end
 
       if prefix_expr
-        gen_expr prefix_expr
+        gen_str_expr prefix_expr
       end
 
       if @width 
@@ -233,7 +284,7 @@ END
 
           expr_var  = gen_var expr
           width_var = gen_var @width
-          gen_var_expr <<"END"
+          gen_expr <<"END"
 #{expr_var} = (#{width_var} >= 0 ? #{expr_var}.#{direction}(#{width_var}, #{pad}) : #{expr_var}.#{direction_other}(- #{width_var}, #{pad}))
 END
           expr = expr_var
@@ -244,17 +295,21 @@ END
         expr << "[0, #{@limit}]"
       end
 
-      gen_expr expr
+      gen_str_expr expr
     end
 
-    gen_lit f
+    gen_str_lit f
 
     proc_expr
 
     self
   end
 
-  def get_arg
+  ####################################################################
+  # Code generation
+  #
+
+  def gen_arg
     if @arg_pos
       @arg_pos_used = true
       arg_i = @arg_pos - 1
@@ -274,31 +329,79 @@ END
     "args[#{arg_i}]"
   end
 
+  def gen_integer expr
+    var = gen_var expr
+    gen_expr <<"END"
+      unless #{var}.respond_to?(:full_to_i)
+        if #{var}.respond_to?(:to_int)
+          #{var} = #{var}.to_int
+        elsif #{var}.respond_to?(:to_i)
+          #{var} = #{var}.to_i
+        end
+      end
+      #{var} = #{var}.full_to_i if #{var}.respond_to?(:full_to_i)
+      #{var} = 0 if #{var}.nil?
+      raise TypeError, "can't convert \#{#{var}} into Integer" unless Integer === #{var}
+END
+    var
+  end
 
-  ####################################################################
-  # Code generation
-  #
+  def gen_pad val, pad_override = nil
+    direction = @flags_minus ? :ljust : :rjust
+    ret = val.to_s
+    modded_width = @width.to_i + (@flags_plus ? 1 : 0)
+    width = nil if modded_width <= val.to_s.size
+    if ret[0] != ?-
+      sign = plus_char
+    else
+      sign = EMPTY_STRING
+    end
 
+    if @precision
+      if @flags_zero
+        ret.gsub!(DOTDOT, EMPTY_STRING)
+      end
+      if @precision > PrecisionMax
+        raise ArgumentError, "precision too big"
+      end
+      ret = sign + ret.send(direction, @precision, pad_override || ZERO)
+      @flags_zero = @flags_plus = @flags_space = nil
+    end
+    if @width
+      if pad_char != SPACE && ret[0] == ?-
+        ret.slice!(0)
+        sign = MINUS
+        width -= 1
+        ret = ret.rjust(width, pad_char)
+      else
+        ret = ret.send(direction, width, pad_char)
+        ret[0] = sign unless sign.empty?
+        return ret
+      end
+    end
+    sign + ret
+  end
+  
   def gen_error cls, fmt
     @error_class, @error_msg = cls, fmt
     self
   end
 
   def gen_var expr = 'nil'
-    var = "l_#{@var_i +=1 }"
+    var = "l#{@var_i +=1 }"
     @exprs << "#{var} = #{expr}"
     var
   end
 
-  def gen_var_expr expr
+  def gen_expr expr
     @exprs << expr
   end
 
-  def gen_lit str
+  def gen_str_lit str
     @str_template << str.inspect[1 .. -2] unless str.empty?
   end
 
-  def gen_expr expr
+  def gen_str_expr expr
     # peephole optimization for Integer#to_s(10).
     expr.sub!(/\.to_s\(10\)$/, '.to_s') 
 
