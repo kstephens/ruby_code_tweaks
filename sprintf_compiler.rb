@@ -345,42 +345,6 @@ END
 END
     var
   end
-
-  def gen_pad val, pad_override = nil
-    direction = @flags_minus ? :ljust : :rjust
-    ret = val.to_s
-    modded_width = @width.to_i + (@flags_plus ? 1 : 0)
-    width = nil if modded_width <= val.to_s.size
-    if ret[0] != ?-
-      sign = plus_char
-    else
-      sign = EMPTY_STRING
-    end
-
-    if @precision
-      if @flags_zero
-        ret.gsub!(DOTDOT, EMPTY_STRING)
-      end
-      if @precision > PrecisionMax
-        raise ArgumentError, "precision too big"
-      end
-      ret = sign + ret.send(direction, @precision, pad_override || ZERO)
-      @flags_zero = @flags_plus = @flags_space = nil
-    end
-    if @width
-      if pad_char != SPACE && ret[0] == ?-
-        ret.slice!(0)
-        sign = MINUS
-        width -= 1
-        ret = ret.rjust(width, pad_char)
-      else
-        ret = ret.send(direction, width, pad_char)
-        ret[0] = sign unless sign.empty?
-        return ret
-      end
-    end
-    sign + ret
-  end
   
   def gen_error cls, fmt
     @error_class, @error_msg = cls, fmt
