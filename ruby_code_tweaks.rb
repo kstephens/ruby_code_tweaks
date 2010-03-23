@@ -227,8 +227,9 @@ p.synopsis = <<'END'
 *** Cache computational objects.
 * SprintfCompiler:
 ** speeds up Rubinius for cached formats.
-** is ~2.5x slower than MRI sprintf().
-** Native JRuby String#% is faster.
+** is ~2.5x slower than MRI sprintf(),
+** but is ~3x faster in Rubinius than MRI 1.8.6 sprintf().
+** is slower than native JRuby String#%.
 END
 
 
