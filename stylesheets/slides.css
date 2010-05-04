@@ -3,6 +3,11 @@
   padding: 0;
 }
 
+a:link {font-weight: bold; text-decoration: none; color: #ffffff}
+a:visited {font-weight: bold; text-decoration: none; color: #ffffff}
+a:hover {font-weight: bold; text-decoration: none; color: #ffffff}
+a:active {font-weight: bold; text-decoration: none; color: #ffffff}
+
 body {
   font-family: Helvetica;
   font-size: 30px;
