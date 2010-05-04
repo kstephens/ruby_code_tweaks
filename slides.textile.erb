@@ -2,9 +2,11 @@
 
 h1. Ruby Code Performance Tweaks
 
-* DRAFT <%= Date.today.to_s %>
+* <%= Date.today.to_s %>
 * Kurt Stephens - kurt@enovafinancial.com
 * Enova Financial
+* "":http://kurtstephens.com/pub/ruby/ruby_code_tweaks/
+* "":http://github.com/kstephens/ruby_code_tweaks/
 
 !SLIDE
 
@@ -42,7 +44,8 @@ h1. Funnel
 
 h1. Ruby Platforms
 
-<% Platform.instances.each do | plat | %>
+<% platforms = Platform.instances_enabled %>
+<% platforms.each do | plat | %>
 * <%= plat.name %>
 <%= plat.details %>
 <% end %>
@@ -89,8 +92,27 @@ h2. Do Your Research
 * Fix code before blaming Ruby - clean, profiled code works best everywhere.
 * Measure, then measure again.
 
+!SLIDE
 
-<% Problem.instances.each do | prob | %>
+h1. Common Solution Domain Problems
+
+<% problems = Problem.instances_enabled %>
+<% problems[0..8].each do | prob | %>
+* <%= prob.name %>: <%= prob.description %> 
+<% end %>
+
+
+!SLIDE
+
+h1. Common Solution Domain Problems
+
+<% problems = Problem.instances_enabled %>
+<% problems[8..-1].each do | prob | %>
+* <%= prob.name %>: <%= prob.description %> 
+<% end %>
+
+
+<% problems.each do | prob | %>
 
 !SLIDE
 
@@ -140,11 +162,12 @@ h1. Results
 * Test script: "":relative:<%= prob.problem_file %>
 * Test output: "":relative:<%= prob.output_file %>
 * Measurements by platform: <% prob.platforms.each do | plat | %>
-** <%= plat.name %>: "":relative:<%= prob.measurement_file(plat) %>
+** <%= plat.name %>: "":relative:<%= prob.measurement_file(plat) %> 
 <% end %>
 
-<% if false %>
-<% prob.platforms.each do | plat | %>
+
+<% if prob.show_platform_graphs %>
+<% platforms.each do | plat | %>
 !SLIDE
 
 !<%= prob.graph_image(plat) %>!
@@ -152,11 +175,13 @@ h1. Results
 <% end %>
 <% end %>
 
+<% if prob.show_solution_graphs %>
 <% prob.solutions.each do | sol | %>
 !SLIDE
 
 !<%= prob.graph_image(sol) %>!
 
+<% end %>
 <% end %>
 
 <% if prob.synopsis %>

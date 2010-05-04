@@ -4,6 +4,9 @@ class Platform
   def self.instances
     @@instances
   end
+  def self.instances_enabled
+    instances.select{|x| x.enabled }
+  end
 
   attr_accessor :name, :cmd, :opts, :enabled
   def initialize name, cmd, opts = ''
@@ -30,8 +33,9 @@ class Platform
     file = prob.problem_file
     result_file = prob.measurement_file(self)
     output_txt = prob.output_file(self)
-    
-    cmd = "/usr/bin/time #{self.cmd} #{self.opts} #{file} #{plat.name.inspect} #{result_file.inspect}"
+
+    cmd_line = "#{self.cmd} #{self.opts}"
+    cmd = "/usr/bin/time #{cmd_line} #{file} #{plat.name.inspect} #{result_file.inspect}"
 
     unless ENV['FORCE']
       if File.exist?(ouput_txt)
@@ -55,7 +59,7 @@ class Platform
 
     # system("cat #{file}")
 
-    cmd = "( #{cmd} ) 2>&1 | tee -a #{output_txt}"
+    cmd = "( export RCT_PLATFORM_CMD_LINE=#{cmd_line.inspect}; #{cmd} ) 2>&1 | tee -a #{output_txt}"
     unless result = system(cmd)
       data = File.read(result_file) rescue nil
       data ||= '[ ]'

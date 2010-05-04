@@ -14,24 +14,39 @@ require 'tempfile'
 
 ########################################################
 
-#Platform.new("MRI-1.8.6-p287",   "~/local/ruby/1.8.6-p287/bin/ruby")
 Platform.new("MRI-1.8.6-p399",   "~/local/ruby/1.8.6-p399/bin/ruby")
-#Platform.new("MRI-1.8.7", "/usr/bin/ruby")
 Platform.new("MRI-1.8.7", "~/local/ruby/1.8.7-git/bin/ruby")
 Platform.new("MRI-1.9",   "~/local/ruby/trunk/bin/ruby")
-#Platform.new("JRuby-1.2", "/usr/bin/jruby1.2")
-Platform.new("JRuby-1.4", "~/local/jruby-1.4.0/bin/jruby", '--fast')
-Platform.new("Rubinius-ks", "~/local/rubinius/kstephens/bin/rbx")
-#Platform.new("Rubinius", "~/local/rubinius/master/bin/rbx")
+Platform.new("JRuby-1.4", "~/local/ruby/jruby-1.4.1/bin/jruby", '--fast') # -J-Xmx1024m does not work!!
+ENV['JAVA_MEM'] = '-Xmx1024m'
+Platform.new("Rubinius", "~/local/rubinius/master/bin/rbx")
+#Platform.new("Rubinius-ks", "~/local/rubinius/kstephens/bin/rbx")
 
 ########################################################
 # Begin problems.
 ########################################################
 
+p = Problem.new(:startup_overhead)
+p.description = "Start a ruby process N times."
+p.n = [ 100 ]
+p.around = <<END
+  n.times do
+    __SOLUTION__
+  end
+END
+p.inline = true
+
+p.solution 'system("ruby ...")', <<'END'
+  system("#{$platform_cmd_line} -e 'exit 0'") or 
+    raise "failed"
+END
+
+############################################################
+
 p = Problem.new(:yield_n_times)
 p.description = "Yield to a block N times."
 p.n = [ 1000 ]
-p.around= <<END
+p.around = <<END
   40000.times do
     __SOLUTION__
   end
@@ -39,7 +54,7 @@ END
 p.inline = true
 
 p.solution "for i in 1..n", <<END
-  for i in 1..n do
+  for i in 1 .. n do
     n
   end
 END
@@ -57,7 +72,7 @@ p.solution "1.upto(n)", <<END
 END
 
 p.solution "(1..n).each", <<END
-  (1..n).each do
+  (1 .. n).each do
     n
   end
 END
@@ -66,7 +81,6 @@ p.synopsis = <<END
 * Use n.times, for portability.
 * Do not bother with the rest.
 * Ranges create garbage.
-* Something is up with MRI 1.8.7.
 END
 
 ############################################################
@@ -127,7 +141,8 @@ s = p.solution "array.first", <<'END'
 END
 
 p.synopsis = <<'END'
-* array[0] is optimized on some platforms.
+* @array[0]@ is optimized on some platforms.
+* @array.first@ should be optimized on all platforms.
 END
 
 ############################################################
@@ -152,7 +167,8 @@ s = p.solution "array.last", <<'END'
 END
 
 p.synopsis = <<'END'
-* array[-1] is optimized on some platforms.
+* @array[-1]@ is optimized on some platforms.
+* @array.last@ should be optimized on all platforms.
 END
 
 ############################################################
@@ -180,7 +196,6 @@ s = p.solution "String Interpolation", <<'END'
 END
 
 p.synopsis = <<'END'
-* MRI 1.8.7+ Strings are slower than 1.8.6.
 * Use String interpolation.
 END
 
@@ -240,6 +255,7 @@ END
 ############################################################
 
 p = Problem.new(:sprintf_compiler)
+p.enabled = false
 p.init = <<'END'
 $:.unshift '../ruby_sprintf_compiler/lib'
 END
@@ -350,11 +366,11 @@ p.description = <<'END'
 Accumulate String parts of size N into one larger String.
 END
 # p.enabled = false
-p.n = [ 1, 2, 5, 10, 20, 50, 100 ] # , 200, 500, 1000 ]
-p.setup= <<'END'
+p.n = [ 1, 2, 5, 10, 20, 50, ] # 100 ] # , 200, 500, 1000 ]
+p.setup = <<'END'
   parts = (0 ... 100).to_a.map{"a" * n}
 END
-p.around= <<END
+p.around = <<END
   str = ''
   100.times do
     __SOLUTION__
@@ -387,7 +403,7 @@ END
 
 
 p.synopsis = <<'END'
-* Use str << x
+* Use str << x, but carefully avoid side-effects.
 * str += x creates pointless garbage; DONT USE IT!
 * Some platforms handle garbage and assignments differently.
 * Use array.concat x, instead of array += x.
@@ -401,11 +417,10 @@ Accumulate String parts of size N into one larger String.
 END
 # p.enabled = false
 p.n = [ 1, 2, 5, 10, 20, 50, 100, 200, 500 ] # , 1000 ]
-p.setup= <<'END'
+p.setup = <<'END'
   parts = (0 ... 100).to_a.map{"a" * n}
 END
-p.around= <<END
-  str = ''
+p.around = <<END
   10000.times do
     __SOLUTION__
   end
@@ -413,6 +428,7 @@ END
 p.inline = true
 
 s = p.solution "str << x", <<'END'
+  str = ''
   parts.each do | x |
     str << x
   end
@@ -421,7 +437,7 @@ s.notes = <<'END'
 END
 
 s = p.solution "parts.join", <<END
-  str << parts.join("")
+  str = parts.join("")
 END
 s.notes = <<'END'
 END
@@ -436,7 +452,7 @@ END
 
 p = Problem.new(:array_include_short)
 p.description = 'Is a value in a short, constant set?'
-p.n= [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+p.n = [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
 p.example = <<'END'
   # n = 2
 
@@ -452,11 +468,11 @@ p.example = <<'END'
   # ETC... TIMTOWTI!
 END
 p.inline = true
-p.setup= <<END
+p.setup = <<END
   @array = (0 ... n).to_a.sort_by{|x| rand}
   try    = (0 ... 1000).to_a.map{|x| rand(n + n)}.sort_by{|x| rand}
 END
-p.around= <<'END'
+p.around = <<'END'
   1000.times do
     try.each do | x |
       __SOLUTION__ x
@@ -567,19 +583,20 @@ END
 p.synopsis = <<'END'
 * Beware: case uses @===@, not @==@.
 * Use @x == y@ when n == 1.
-* Use hash.key?(x) when n > 1.
+* Use HASHkey?(x) when n > 1.
 * x == y1 && ... is faster than [ ... ].include?(x) when n < ~10.
 END
 
 ############################################################
 
 p = Problem.new(:array_include)
-p.n= [ 1, 10, 20, 50, 100, 200, 500 ] # , 1000 ]
-p.setup= <<END
+p.description = 'Is an element in a Array?'
+p.n = [ 1, 10, 20, 50, 100, ] # 200, 500 ] # , 1000 ]
+p.setup = <<END
   array = (0 ... n).to_a.sort_by{|x| rand}
   try   = (0 ... 2000).to_a.sort_by{|x| rand}
 END
-p.around= <<END
+p.around = <<END
   100.times do
     try.each do | x |
       __SOLUTION__
@@ -609,15 +626,16 @@ END
  
 p.synopsis = <<'END'
 * Use a Hash.
-* Beware: case uses === operator.
-* MRI 1.8.7+ Array#include? is slower than MRI 1.8.6.
+* Beware: case uses @#===@ operator.
+* MRI 1.8.7+ @Array#include?@ is slower than MRI 1.8.6.
 END
 
 ############################################################
 
 p = Problem.new(:value_in_set)
 p.description = 'Is a value in a constant set?'
-p.n= [ 1, 10, 20, 50, 100, 200 ] # , 500, 1000 ]
+p.n = [ 1, 10, 20, 50, ] # 100, 200 ] # 500, 1000 ]
+p.show_platform_graphs = true
 p.example = <<'END'
   # n = 2 
   array = [ :foo, :bar ] 
@@ -630,11 +648,11 @@ p.example = <<'END'
   ! (array & [ x ]).empty?     # <== WTF?
 END
 p.inline = true
-p.setup= <<END
+p.setup = <<END
   array = (0 ... n).to_a.sort_by{|x| rand}
   try   = (0 ... 1000).to_a.map{|x| rand(n + n)}.sort_by{|x| rand}
 END
-p.around= <<'END'
+p.around = <<'END'
   1000.times do
     try.each do | x |
       __SOLUTION__
@@ -679,8 +697,9 @@ END
 ############################################################
 
 p = Problem.new(:dynamic_expression)
+p.show_platform_graphs = true
 p.description = 'Evaluate a dynamic expression'
-p.n= [ 1000 ]
+p.n = [ 1000 ]
 p.example = <<'END'
   x = 10
   expr = "x * 2"
@@ -742,7 +761,8 @@ if ENV['SLIDES'] == '1'
   SCARLET = (ENV['SCARLET'] ||= File.expand_path("../scarlet/bin/scarlet"))
   # system "#{SCARLET} -g slides -f html slides.textile"
   system "set -x; #{SCARLET} -f html slides.textile > slides/index.html"
-  system "set -x; cp -p image/*.* slides/image"
+  system "set -x; cp -p image/*.* slides/image/"
+  system "set -x; cp -p stylesheets/*.* slides/stylesheets/"
   system "rm -rf slides/problem; set -x; cp -rp problem slides/problem"
   system "rm -rf slides/measurement; set -x; cp -rp measurement slides/measurement; rm -f slides/measurement/*.rbc"
   system "rm -rf ruby_code_tweaks-slides; set -x; cp -rp slides ruby_code_tweaks-slides"
@@ -750,5 +770,5 @@ if ENV['SLIDES'] == '1'
 end
 
 if ENV['PUBLISH'] == '1'
-  system "rsync -aruzv slides kscom:~/kurtstephens.com/priv/ruby/ruby_code_tweaks/"
+  system "rsync -aruzv slides kscom:~/kurtstephens.com/pub/ruby/ruby_code_tweaks/"
 end
